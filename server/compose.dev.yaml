@@ -1,0 +1,105 @@
+name: pdf-extraction-stack-dev
+
+services:
+  api:
+    build:
+      context: .
+      target: dev
+    container_name: pdf-extraction-api-dev
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      REDIS_URL: redis://redis:6379
+      REDIS_JOB_PREFIX: ${REDIS_JOB_PREFIX:-pdf:extract:job:}
+      JOB_TTL_SECONDS: ${JOB_TTL_SECONDS:-604800}
+      DOCUMENT_STORAGE_DIR: /data/uploads
+      BULLMQ_QUEUE_NAME: ${BULLMQ_QUEUE_NAME:-pdf-extract}
+      BULLMQ_ATTEMPTS: ${BULLMQ_ATTEMPTS:-3}
+      BULLMQ_BACKOFF_DELAY_MS: ${BULLMQ_BACKOFF_DELAY_MS:-2000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pdf_extract}:${POSTGRES_PASSWORD:-pdf_extract}@postgres:5432/${POSTGRES_DB:-pdf_extract}
+      NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
+    ports:
+      - 127.0.0.1:4000:4000
+    depends_on:
+    # #SYSTEM: DO NOT UNCOMMENT THIS UNLESS SPECIFIED!
+      # postgres:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - documents-data:/data/uploads
+    develop:
+      watch:
+        - path: ./src
+          target: /app/src
+          action: sync+restart
+        - path: ./package.json
+          target: /app/package.json
+          action: rebuild
+        - path: ./tsconfig.json
+          target: /app/tsconfig.json
+          action: rebuild
+
+  worker:
+    build:
+      context: ./worker
+      target: dev
+    container_name: pdf-extraction-worker-dev
+    environment:
+      REDIS_URL: redis://redis:6379
+      REDIS_JOB_PREFIX: ${REDIS_JOB_PREFIX:-pdf:extract:job:}
+      JOB_TTL_SECONDS: ${JOB_TTL_SECONDS:-604800}
+      DOCUMENT_STORAGE_DIR: /data/uploads
+      BULLMQ_QUEUE_NAME: ${BULLMQ_QUEUE_NAME:-pdf-extract}
+      NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - documents-data:/data/uploads
+    develop:
+      watch:
+        - path: ./worker
+          target: /app/worker
+          action: sync+restart
+        - path: ./worker/requirements.txt
+          target: /app/worker/requirements.txt
+          action: rebuild
+
+# #SYSTEM: DO NOT CREATE A APP SERVICE UNLESS SPECIFIED!
+  # app:
+
+# #SYSTEM: DO NOT UNCOMMENT THIS UNLESS SPECIFIED!
+  # postgres:
+  #   image: postgres:18-alpine
+  #   container_name: pdf-extraction-postgres-dev
+  #   environment:
+  #     POSTGRES_DB: ${POSTGRES_DB:-pdf_extract}
+  #     POSTGRES_USER: ${POSTGRES_USER:-pdf_extract}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdf_extract}
+  #   ports:
+  #     - 127.0.0.1:5430:5432
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: pdf-extraction-redis-dev
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  redis-data:
+  documents-data:
