@@ -57,6 +57,7 @@ def extract_pdf(pdf_path: Path) -> PdfExtractionResult:
     try:
         for index, page in enumerate(document, start=1):
             text = page.get_text("text").strip()
+
             if not text:
                 text = ""
 
