@@ -45,11 +45,13 @@ services:
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.7-plus}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-qwen3.7-plus}
+      EXTRACTION_OUTPUT_DIR: /data/output
     depends_on:
       redis:
         condition: service_healthy
     volumes:
       - documents-data:/data/uploads
+      - ../output:/data/output
     restart: unless-stopped
 
   postgres:

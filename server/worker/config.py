@@ -13,6 +13,7 @@ DASHSCOPE_BASE_URL = os.getenv(
     "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 )
 EXTRACTION_CACHE_DIR = os.getenv("EXTRACTION_CACHE_DIR", "/tmp/takeoff-extraction-cache")
+EXTRACTION_OUTPUT_DIR = os.getenv("EXTRACTION_OUTPUT_DIR", "/data/output")
 ROOM_TILE_SIZE_PTS = float(os.getenv("ROOM_TILE_SIZE_PTS", "350"))
 
 

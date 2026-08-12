@@ -17,11 +17,19 @@ export interface ExtractedPage {
   tables: ExtractedTable[];
 }
 
-export interface PdfExtractionResult {
-  pageCount: number;
-  text: string;
-  pages: ExtractedPage[];
-  extractedAt: string;
+export interface FloorPlanExtractionResult {
+  scale?: string;
+  scale_ratio?: number;
+  confidence?: string;
+  metadata?: Record<string, unknown>;
+  walls?: unknown[];
+  dimensions?: unknown[];
+  rooms?: unknown[];
+  openings?: unknown[];
+  drawing_profile?: Record<string, unknown>;
+  notes?: string[];
+  token_usage?: Record<string, unknown>;
+  extractedAt?: string;
 }
 
 export interface JobRecord {
@@ -34,7 +42,7 @@ export interface JobRecord {
   notificationUrl?: string;
   metadata?: Record<string, unknown>;
   attempts: number;
-  result?: PdfExtractionResult;
+  result?: FloorPlanExtractionResult;
   error?: string;
   completedAt?: string;
 }

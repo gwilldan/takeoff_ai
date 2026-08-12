@@ -305,6 +305,36 @@ p {
   border: 1px solid var(--border);
   background: #f8fbff;
   color: var(--text);
+  max-height: 420px;
+  font-size: 0.82rem;
+}
+
+.result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.result-summary span {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.result-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.field input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .error {

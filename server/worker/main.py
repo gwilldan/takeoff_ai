@@ -9,10 +9,11 @@ from typing import Any, Dict
 from bullmq import UnrecoverableError, Worker
 from redis import Redis
 
-from config import Settings, load_settings
+from config import Settings, load_settings, EXTRACTION_OUTPUT_DIR
 from extractor import extract_pdf_with_agent
 from job_store import load_job, update_job
 from notifier import send_notification
+from output_writer import save_extraction_output
 
 
 def redis_client(settings: Settings) -> Redis:
@@ -103,6 +104,8 @@ async def process_job(job: Any, _token: str, settings: Settings, redis: Redis) -
         document_path = resolve_document_path(settings, job.data)
         extraction = await asyncio.to_thread(extract_pdf_with_agent, document_path)
         result = to_result_payload(extraction)
+
+        await asyncio.to_thread(save_extraction_output, job_id, result, EXTRACTION_OUTPUT_DIR)
 
         completed_job = await asyncio.to_thread(
             update_job,

@@ -13,6 +13,35 @@ type ExtractResponse = {
   queue: string;
 };
 
+type ExtractionResult = {
+  scale?: string;
+  scale_ratio?: number;
+  confidence?: string;
+  metadata?: {
+    pdf_path?: string;
+    page_size_pts?: number[];
+    text_span_count?: number;
+    line_segment_count?: number;
+    curve_count?: number;
+  };
+  walls?: Array<{ id: string; length_mm: number; start_pts: number[]; end_pts: number[] }>;
+  dimensions?: Array<{ value_mm: number; text: string; confidence: string }>;
+  rooms?: Array<{
+    id: string;
+    name: string;
+    display_name?: string;
+    area_m2?: number | null;
+    area_source?: string;
+    dimensions_mm?: Record<string, number>;
+  }>;
+  openings?: Array<{ kind: string; reference: string }>;
+  notes?: string[];
+  token_usage?: {
+    totals?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  };
+  extractedAt?: string;
+};
+
 type JobRecord = {
   id: string;
   status: JobStatus;
@@ -23,11 +52,7 @@ type JobRecord = {
   attempts: number;
   completedAt?: string;
   error?: string;
-  result?: {
-    pageCount: number;
-    text: string;
-    extractedAt: string;
-  };
+  result?: ExtractionResult;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
@@ -50,6 +75,9 @@ export default function Page() {
   const [job, setJob] = useState<JobRecord | null>(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const isProcessing =
+    loading || (job !== null && job.status !== 'completed' && job.status !== 'failed');
 
   useEffect(() => {
     if (!job || job.status === 'completed' || job.status === 'failed') {
@@ -74,6 +102,10 @@ export default function Page() {
   }, [job]);
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (isProcessing) {
+      return;
+    }
+
     const nextFile = event.target.files?.[0] ?? null;
     setDocumentFile(nextFile);
     setJob(null);
@@ -82,6 +114,10 @@ export default function Page() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isProcessing) {
+      return;
+    }
 
     if (!documentFile) {
       setMessage('Please choose a PDF file first.');
@@ -119,12 +155,25 @@ export default function Page() {
         notificationUrl: notificationUrl || undefined,
         attempts: 0
       });
-      setMessage(`Job ${data.jobId} queued on ${data.queue}.`);
+      setMessage(`Job ${data.jobId} queued on ${data.queue}. Polling for results…`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unexpected error');
     } finally {
       setLoading(false);
     }
+  }
+
+  function buttonLabel() {
+    if (loading) {
+      return 'Starting…';
+    }
+    if (job?.status === 'queued') {
+      return 'Queued…';
+    }
+    if (job?.status === 'processing') {
+      return 'Extracting…';
+    }
+    return 'Start extraction';
   }
 
   return (
@@ -164,6 +213,7 @@ export default function Page() {
                   type="file"
                   accept="application/pdf"
                   onChange={handleFileChange}
+                  disabled={isProcessing}
                   required
                 />
               </label>
@@ -175,15 +225,18 @@ export default function Page() {
                   value={notificationUrl}
                   onChange={(event) => setNotificationUrl(event.target.value)}
                   placeholder="https://example.com/webhook"
+                  disabled={isProcessing}
                 />
               </label>
 
               <div className="actions">
-                <button type="submit" className="button-primary" disabled={loading}>
-                  {loading ? 'Starting...' : 'Start extraction'}
+                <button type="submit" className="button-primary" disabled={isProcessing}>
+                  {buttonLabel()}
                 </button>
                 <p className="helper">
-                  The document is persisted first, then BullMQ starts the worker job.
+                  {isProcessing
+                    ? 'Extraction in progress — polling every 2.5s until complete.'
+                    : 'The document is persisted first, then BullMQ starts the worker job.'}
                 </p>
               </div>
             </form>
@@ -228,9 +281,30 @@ export default function Page() {
                   <div className="result">
                     <h3>Extraction result</h3>
                     <p>
-                      {job.result.pageCount} pages extracted at {job.result.extractedAt}
+                      Scale {job.result.scale ?? 'unknown'} · confidence{' '}
+                      {job.result.confidence ?? 'n/a'} · extracted at{' '}
+                      {job.result.extractedAt ?? job.completedAt ?? 'unknown'}
                     </p>
-                    <pre>{job.result.text || 'No text extracted.'}</pre>
+                    <div className="result-summary">
+                      <span>{job.result.walls?.length ?? 0} walls</span>
+                      <span>{job.result.rooms?.length ?? 0} rooms</span>
+                      <span>{job.result.dimensions?.length ?? 0} dimensions</span>
+                      <span>{job.result.openings?.length ?? 0} openings</span>
+                      {job.result.token_usage?.totals ? (
+                        <span>{job.result.token_usage.totals.total_tokens} tokens</span>
+                      ) : null}
+                    </div>
+                    {job.result.rooms && job.result.rooms.length > 0 ? (
+                      <ul className="result-list">
+                        {job.result.rooms.map((room) => (
+                          <li key={room.id}>
+                            {room.display_name ?? room.name}
+                            {room.area_m2 != null ? ` — ${room.area_m2} m²` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <pre>{JSON.stringify(job.result, null, 2)}</pre>
                   </div>
                 ) : null}
 
