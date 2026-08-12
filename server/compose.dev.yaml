@@ -52,6 +52,7 @@ services:
       DOCUMENT_STORAGE_DIR: /data/uploads
       BULLMQ_QUEUE_NAME: ${BULLMQ_QUEUE_NAME:-pdf-extract}
       NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
+      OLLAMA_HOST: http://ollama:11434
     depends_on:
       redis:
         condition: service_healthy
@@ -99,7 +100,20 @@ services:
       timeout: 5s
       retries: 5
 
+    
+  ollama:
+    container_name: ollama
+    image: ollama/ollama
+    restart: unless-stopped
+    ports:
+      - 11434
+    volumes:
+      - ollama:/root/.ollama
+
 volumes:
   postgres-data:
   redis-data:
   documents-data:
+  ollama:
+
+

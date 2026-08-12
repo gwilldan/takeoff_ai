@@ -55,21 +55,21 @@ class BOQResult:
     notes: list[str] = field(default_factory=list)
 
 
-# @dataclass
-# class ExtractedTable:
-#     rows: List[List[str]]
+@dataclass
+class ExtractedTable:
+    rows: List[List[str]]
 
 
-# @dataclass
-# class ExtractedPage:
-#     pageNumber: int
-#     text: str
-#     tables: List[ExtractedTable]
+@dataclass
+class ExtractedPage:
+    pageNumber: int
+    text: str
+    tables: List[ExtractedTable]
 
 
-# @dataclass
-# class PdfExtractionResult:
-#     pageCount: int
-#     text: str
-#     pages: List[ExtractedPage]
-#     extractedAt: str
+@dataclass
+class PdfExtractionResult:
+    pageCount: int
+    text: str
+    pages: List[ExtractedPage]
+    extractedAt: str

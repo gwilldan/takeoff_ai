@@ -336,10 +336,6 @@ def run_agent(pdf_path: str) -> dict:
     Run the LLM agent with tool calling.
     Returns the raw structured extraction dict.
     """
-    try:
-        import ollama
-    except ImportError:
-        raise RuntimeError("ollama package not installed. Run: pip install ollama")
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -363,6 +359,7 @@ def run_agent(pdf_path: str) -> dict:
         )
 
         message = response["message"]
+        print("agent message:", message)
         messages.append(message)
 
         tool_calls = message.get("tool_calls") or []

@@ -9,7 +9,7 @@ To add a new tool:
 """
 
 import json
-from server.worker.tools.extractor import (
+from server.worker.tools.extract import (
     get_page_metadata,
     get_text_labels,
     get_line_segments,
