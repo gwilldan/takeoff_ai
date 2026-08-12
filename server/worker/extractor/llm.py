@@ -1,6 +1,7 @@
 """
 LLM wrapper with per-call token tracking.
 
+Uses the DashScope OpenAI-compatible API (Qwen models).
 Every LLM invocation goes through chat_with_tracking() so prompt/completion
 token counts are recorded and surfaced in the final extraction result.
 """
@@ -8,12 +9,26 @@ token counts are recorded and surfaced in the final extraction result.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-import ollama
+from openai import OpenAI
 
-from config import LLM_MODEL
+from config import DASHSCOPE_BASE_URL, LLM_MODEL
+
+
+_client: OpenAI | None = None
+
+
+def get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            raise RuntimeError("DASHSCOPE_API_KEY environment variable is not set")
+        _client = OpenAI(api_key=api_key, base_url=DASHSCOPE_BASE_URL)
+    return _client
 
 
 @dataclass
@@ -71,15 +86,49 @@ class TokenTracker:
         }
 
 
-def _extract_usage(raw: dict, step: str, model: str) -> LLMUsage:
-    prompt = int(raw.get("prompt_eval_count") or 0)
-    completion = int(raw.get("eval_count") or 0)
+def _normalize_messages(messages: list[dict]) -> list[dict]:
+    """
+    Convert internal message format to OpenAI chat format.
+
+    Supports legacy Ollama-style messages that attach base64 images via an
+    ``images`` key on the message dict.
+    """
+    normalized: list[dict] = []
+
+    for message in messages:
+        role = message["role"]
+        content = message.get("content", "")
+        images = message.get("images") or []
+
+        if images:
+            parts: list[dict] = []
+            if content:
+                parts.append({"type": "text", "text": content})
+            for image_b64 in images:
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{image_b64}",
+                    },
+                })
+            normalized.append({"role": role, "content": parts})
+        else:
+            normalized.append({"role": role, "content": content})
+
+    return normalized
+
+
+def _extract_usage(completion: Any, step: str, model: str) -> LLMUsage:
+    usage = getattr(completion, "usage", None)
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", 0) or (prompt + completion_tokens))
     return LLMUsage(
         step=step,
         model=model,
         prompt_tokens=prompt,
-        completion_tokens=completion,
-        total_tokens=prompt + completion,
+        completion_tokens=completion_tokens,
+        total_tokens=total,
     )
 
 
@@ -93,19 +142,24 @@ def chat_with_tracking(
     format: Optional[str] = None,
 ) -> LLMResponse:
     """
-    Call ollama.chat and record token usage for this step.
+    Call the DashScope-compatible chat completions API and record token usage.
     """
     model = model or LLM_MODEL
+    client = get_client()
 
-    kwargs: dict[str, Any] = {"model": model, "messages": messages}
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": _normalize_messages(messages),
+    }
     if tools:
         kwargs["tools"] = tools
-    if format:
-        kwargs["format"] = format
+    if format == "json":
+        kwargs["response_format"] = {"type": "json_object"}
 
-    raw = ollama.chat(**kwargs)
-    message = raw["message"]
-    usage = _extract_usage(raw, step, model)
+    completion = client.chat.completions.create(**kwargs)
+    choice = completion.choices[0].message
+    content = choice.content or ""
+    usage = _extract_usage(completion, step, model)
     tracker.calls.append(usage)
 
     print(
@@ -115,11 +169,16 @@ def chat_with_tracking(
         f"total={usage.total_tokens}"
     )
 
+    message = {
+        "role": choice.role,
+        "content": content,
+    }
+
     return LLMResponse(
-        content=message.get("content") or "",
+        content=content,
         usage=usage,
         message=message,
-        raw=raw,
+        raw=completion.model_dump(),
     )
 
 

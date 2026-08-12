@@ -52,7 +52,10 @@ services:
       DOCUMENT_STORAGE_DIR: /data/uploads
       BULLMQ_QUEUE_NAME: ${BULLMQ_QUEUE_NAME:-pdf-extract}
       NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
-      OLLAMA_HOST: http://ollama:11434
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen3.7-plus}
+      LLM_VISION_MODEL: ${LLM_VISION_MODEL:-qwen3.7-plus}
     depends_on:
       redis:
         condition: service_healthy
@@ -100,20 +103,9 @@ services:
       timeout: 5s
       retries: 5
 
-    
-  ollama:
-    container_name: ollama
-    image: ollama/ollama
-    restart: unless-stopped
-    ports:
-      - 11434
-    volumes:
-      - ollama:/root/.ollama
-
 volumes:
   postgres-data:
   redis-data:
   documents-data:
-  ollama:
 
 

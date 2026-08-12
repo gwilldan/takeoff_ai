@@ -53,6 +53,9 @@ def extract_pdf(pdf_path: str, *, write_cache: bool = True) -> dict:
 
     print("[pipeline] Inferring drawing profile...")
     profile = infer_drawing_profile(cache, tracker)
+    print("""[pipeline]-response: first LLM response
+    profile:
+    """, profile)
 
     print("[pipeline] Extracting dimensions...")
     dimensions = extract_dimensions(cache, profile)
