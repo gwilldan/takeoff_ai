@@ -73,3 +73,28 @@ class PdfExtractionResult:
     text: str
     pages: List[ExtractedPage]
     extractedAt: str
+
+
+@dataclass
+class TokenUsageRecord:
+    step: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass
+class FloorPlanExtraction:
+    scale: str
+    scale_ratio: int
+    walls: list
+    dimensions: list
+    rooms: list
+    openings: list
+    drawing_profile: dict
+    notes: list[str]
+    token_usage: dict
+    extracted_at: str
+    confidence: str = "medium"
+    metadata: dict = field(default_factory=dict)

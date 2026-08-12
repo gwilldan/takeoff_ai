@@ -1,11 +1,10 @@
 """
-Tool registry — the single place where tools are registered for the LLM.
+Tool registry — legacy bulk tools + cache query tools.
 
-To add a new tool:
-  1. Write the function in extraction.py (or a new tool file)
-  2. Add it to TOOL_FUNCTIONS below
-  3. Add its JSON schema to TOOL_SCHEMAS below
-  That's it — the agent loop picks it up automatically.
+The profile-first pipeline in extractor/ uses tools/query.py directly
+against an ExtractionCache. The bulk tools below remain available for
+debugging or ad-hoc agent use but should not be called with full dumps
+in an agent loop.
 """
 
 import json

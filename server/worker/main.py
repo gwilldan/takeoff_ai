@@ -62,24 +62,21 @@ def resolve_document_path(settings: Settings, job: Dict[str, Any]) -> Path:
     return document_path
 
 
-def to_result_payload(extraction: Any) -> Dict[str, Any]:
+def to_result_payload(extraction: dict) -> Dict[str, Any]:
+    """Map pipeline extraction dict to the worker job result shape."""
     return {
-        "pageCount": extraction.pageCount,
-        "text": extraction.text,
-        "pages": [
-            {
-                "pageNumber": page.pageNumber,
-                "text": page.text,
-                "tables": [
-                    {
-                        "rows": table.rows
-                    }
-                    for table in page.tables
-                ]
-            }
-            for page in extraction.pages
-        ],
-        "extractedAt": extraction.extractedAt
+        "scale": extraction.get("scale"),
+        "scale_ratio": extraction.get("scale_ratio"),
+        "confidence": extraction.get("confidence"),
+        "metadata": extraction.get("metadata"),
+        "walls": extraction.get("walls", []),
+        "dimensions": extraction.get("dimensions", []),
+        "rooms": extraction.get("rooms", []),
+        "openings": extraction.get("openings", []),
+        "drawing_profile": extraction.get("drawing_profile"),
+        "notes": extraction.get("notes", []),
+        "token_usage": extraction.get("token_usage"),
+        "extractedAt": extraction.get("extracted_at"),
     }
 
 
@@ -116,7 +113,7 @@ async def process_job(job: Any, _token: str, settings: Settings, redis: Redis) -
                 "status": "completed",
                 "result": result,
                 "error": None,
-                "completedAt": extraction.extractedAt
+                "completedAt": result.get("extractedAt")
             },
             settings.job_ttl_seconds
         )

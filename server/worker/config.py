@@ -6,6 +6,11 @@ MM_PER_INCH = 25.4
 MIN_WALL_LENGTH_MM = 100
 DEFAULT_SCALE_RATIO = 100
 
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-oss:120b-cloud")
+LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", LLM_MODEL)
+EXTRACTION_CACHE_DIR = os.getenv("EXTRACTION_CACHE_DIR", "/tmp/takeoff-extraction-cache")
+ROOM_TILE_SIZE_PTS = float(os.getenv("ROOM_TILE_SIZE_PTS", "350"))
+
 
 @dataclass(frozen=True)
 class Settings:

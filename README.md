@@ -4,6 +4,74 @@ Takeoff AI is an AI application for automating the production of civil engineeri
 
 Users upload a plan PDF, preview it in the browser, and start a background extraction workflow that stores the file, queues processing, and sends a notification when the job is done.
 
+```
+                     PLAN PDF
+
+                        │
+
+         ┌──────────────┴──────────────┐
+
+         │                             │
+
+         ▼                             ▼
+
+   Rendered pages                PDF metadata
+
+   / high-res images             / text / coords
+
+         │                             │
+
+         ▼                             │
+
+   Vision model                        │
+
+         │                             │
+
+         │  "This is a wall"           │
+
+         │  "This is a door"           │
+
+         │  "This is a dimension"      │
+
+         │  "This room is bedroom"     │
+
+         │                             │
+
+         └──────────────┬──────────────┘
+
+                        ▼
+
+                STRUCTURED OBJECTS
+
+                        │
+
+                        ▼
+
+             PYTHON GEOMETRY ENGINE
+
+                        │
+
+            ┌───────────┴───────────┐
+
+            ▼                       ▼
+
+       Measurements             Validation
+
+            │                       │
+
+            └───────────┬───────────┘
+
+                        ▼
+
+                 ANNOTATED PLAN
+
+                        │
+
+                        ▼
+
+                      BEME
+```
+
 ## Stack
 
 - Frontend: Next.js + TypeScript
