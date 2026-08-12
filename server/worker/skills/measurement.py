@@ -6,8 +6,8 @@ The LLM never touches this — your code calls it after agent extraction.
 """
 
 import math
-from worker.models import Wall
-from worker.config import (
+from models import Wall
+from config import (
     PDF_POINTS_PER_INCH,
     MM_PER_INCH,
     MIN_WALL_LENGTH_MM,

@@ -1,1 +1,1 @@
-from worker.tools.registry import TOOL_SCHEMAS, TOOL_FUNCTIONS, dispatch_tool
+from tools.registry import TOOL_SCHEMAS, TOOL_FUNCTIONS, dispatch_tool

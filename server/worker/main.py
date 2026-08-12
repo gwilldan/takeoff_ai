@@ -10,7 +10,7 @@ from bullmq import UnrecoverableError, Worker
 from redis import Redis
 
 from config import Settings, load_settings
-from extractor import extract_pdf
+from extractor import extract_pdf_with_agent
 from job_store import load_job, update_job
 from notifier import send_notification
 
@@ -104,7 +104,7 @@ async def process_job(job: Any, _token: str, settings: Settings, redis: Redis) -
 
     try:
         document_path = resolve_document_path(settings, job.data)
-        extraction = await asyncio.to_thread(extract_pdf, document_path)
+        extraction = await asyncio.to_thread(extract_pdf_with_agent, document_path)
         result = to_result_payload(extraction)
 
         completed_job = await asyncio.to_thread(

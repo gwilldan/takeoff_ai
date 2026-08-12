@@ -7,7 +7,7 @@ room names to BOQ work sections.
 Deterministic rule-based logic only — no LLM involvement.
 """
 
-from worker.models import Room, Opening
+from models import Room, Opening
 
 
 # ── Room name → POMI/NRM2 work section mapping ───────────────────

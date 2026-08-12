@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 import os
 
+PDF_POINTS_PER_INCH = 72
+MM_PER_INCH = 25.4
+MIN_WALL_LENGTH_MM = 100
+DEFAULT_SCALE_RATIO = 100
+
 
 @dataclass(frozen=True)
 class Settings:
