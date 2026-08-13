@@ -1,3 +1,5 @@
+import { SiteScene } from "./site-scene";
+
 export function Cta() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'hello@takeoff.ai';
@@ -12,7 +14,7 @@ export function Cta() {
             className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/5 via-ink/5 to-ink/5"
             aria-hidden
           />
-
+          <SiteScene show={true} className="pointer-events-none absolute inset-x-0 bottom-0 h-[88%] w-full text-paper opacity-5" />
           <div className="relative">
             <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight text-paper sm:text-4xl">
               Open a drawing and draw your first layer.
