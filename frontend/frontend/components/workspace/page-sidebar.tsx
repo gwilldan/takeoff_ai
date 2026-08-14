@@ -55,7 +55,7 @@ export function PageSidebar({
             checked={onlyAnnotated}
             disabled={!filterAvailable}
             onChange={(event) => setOnlyAnnotated(event.target.checked)}
-            className="h-3 w-3 accent-accent ]"
+            className="h-3 w-3 accent-[var(--color-accent)]"
           />
           Only annotated
         </label>

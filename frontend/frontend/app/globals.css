@@ -1,0 +1,52 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-chrome: #f4f4f5;
+  --color-chrome-2: #fafafa;
+  --color-panel: #ffffff;
+  --color-canvas: #e7e5e4;
+  --color-ink: #18181b;
+  --color-ink-soft: #52525b;
+  --color-ink-faint: #a1a1aa;
+  --color-edge: #e4e4e7;
+  --color-edge-strong: #d4d4d8;
+  --color-accent: #e4572e;
+  --color-accent-soft: #fdece6;
+
+  --font-sans: "Mont Blanc", "Mont", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-chrome);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  overflow: hidden; /* The workspace panes scroll, the page never does. */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Uppercase mono label used as a pane heading. */
+@utility pane-label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+/* Checkerboard behind the page so sheet edges are visible. */
+@utility canvas-field {
+  background-color: var(--color-canvas);
+  background-image:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0, 0, 0, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0, 0, 0, 0.035) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
