@@ -22,13 +22,14 @@ export function SiteHeader() {
           </span>
         </a>
 
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav className="hidden md:flex items-center gap-8 ">
           {NAV_LINKS.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="group relative text-sm text-ink-soft transition-colors hover:text-ink focus-visible:text-ink focus-visible:outline-none"
+              className="group relative text-sm text-ink-soft transition-colors hover:text-ink focus-visible:text-ink focus-visible:outline-none mx-2"
             >
+              <span>{link.label}</span>
               <span
                 aria-hidden
                 className="absolute -bottom-1.5 left-0 h-[1.5px] w-full scale-x-0 bg-accent transition-transform duration-300 ease-out group-hover:scale-x-100 group-focus-visible:scale-x-100 motion-reduce:transition-none"
@@ -39,7 +40,7 @@ export function SiteHeader() {
 
         <a
           href={appUrl}
-          className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-accent"
+          className=" rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-accent"
         >
           Open the workspace
         </a>

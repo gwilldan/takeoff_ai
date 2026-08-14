@@ -15,7 +15,7 @@ export function Hero() {
       />
 
       <div className="relative mx-auto max-w-6xl px-6 pt-20 pb-16 md:pt-28 ">
-      <SiteScene className="md:block pointer-events-none absolute right-0 top-0 h-[500px] w-[1000px] text-accent -scale-x-100 " />
+      <SiteScene className=" opacity-20 md:opacity-100 pointer-events-none absolute right-0 top-0 h-[500px] w-[1000px] text-accent -scale-x-100 " />
         <p className="rule-label">Quantity takeoff, automated</p>
         <h1 className="mt-5 max-w-4xl text-4xl font-semibold tracking-tight text-ink sm:text-5xl md:text-display">
           Drawings to takeoff <br /> 
