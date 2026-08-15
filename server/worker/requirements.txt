@@ -4,3 +4,4 @@ bullmq>=2.19.6
 redis>=5.0.8
 requests>=2.32.3
 openai>=1.40.0
+pytest>=8.0.0

@@ -11,6 +11,7 @@ from redis import Redis
 
 from config import Settings, load_settings, EXTRACTION_OUTPUT_DIR
 from extractor import extract_pdf_with_agent
+from extractor.cache import get_page_count
 from job_store import load_job, update_job
 from notifier import send_notification
 from output_writer import save_extraction_output
@@ -63,22 +64,46 @@ def resolve_document_path(settings: Settings, job: Dict[str, Any]) -> Path:
     return document_path
 
 
-def to_result_payload(extraction: dict) -> Dict[str, Any]:
-    """Map pipeline extraction dict to the worker job result shape."""
-    return {
-        "scale": extraction.get("scale"),
-        "scale_ratio": extraction.get("scale_ratio"),
-        "confidence": extraction.get("confidence"),
-        "metadata": extraction.get("metadata"),
-        "walls": extraction.get("walls", []),
-        "dimensions": extraction.get("dimensions", []),
-        "rooms": extraction.get("rooms", []),
-        "openings": extraction.get("openings", []),
-        "drawing_profile": extraction.get("drawing_profile"),
-        "notes": extraction.get("notes", []),
-        "token_usage": extraction.get("token_usage"),
-        "extractedAt": extraction.get("extracted_at"),
-    }
+def make_page_writer(
+    redis: Redis,
+    settings: Settings,
+    job_id: str,
+    page_count: int,
+) -> Any:
+    """
+    Build the callback that publishes each page as the pipeline finishes it.
+
+    Partial results go into the same `result` field the finished document will
+    use, marked `partial`, so the frontend's existing poll picks pages up as they
+    land and needs no second endpoint. Pages accumulate in the closure rather
+     than being re-read from Redis each time.
+    """
+    pages: list[Dict[str, Any]] = []
+
+    def on_page(page_result: Dict[str, Any]) -> None:
+        pages.append(page_result)
+        plan_pages = [p for p in pages if p.get("isPlan")]
+
+        update_job(
+            redis,
+            settings.redis_job_prefix,
+            job_id,
+            {
+                "status": "processing",
+                "result": {
+                    "partial": True,
+                    "document": {
+                        "pageCount": page_count,
+                        "pagesProcessed": len(pages),
+                        "planPageCount": len(plan_pages),
+                    },
+                    "pages": list(pages),
+                },
+            },
+            settings.job_ttl_seconds,
+        )
+
+    return on_page
 
 
 async def process_job(job: Any, _token: str, settings: Settings, redis: Redis) -> Dict[str, Any]:
@@ -102,8 +127,13 @@ async def process_job(job: Any, _token: str, settings: Settings, redis: Redis) -
 
     try:
         document_path = resolve_document_path(settings, job.data)
-        extraction = await asyncio.to_thread(extract_pdf_with_agent, document_path)
-        result = to_result_payload(extraction)
+        page_count = await asyncio.to_thread(get_page_count, str(document_path))
+
+        result = await asyncio.to_thread(
+            extract_pdf_with_agent,
+            document_path,
+            on_page=make_page_writer(redis, settings, job_id, page_count),
+        )
 
         await asyncio.to_thread(save_extraction_output, job_id, result, EXTRACTION_OUTPUT_DIR)
 
