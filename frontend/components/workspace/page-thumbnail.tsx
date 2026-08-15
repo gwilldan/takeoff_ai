@@ -64,7 +64,7 @@ export function PageThumbnail({
     >
       <div
         style={{ height }}
-        className={`relative overflow-hidden rounded-[3px] border bg-white transition-colors ${
+        className={`relative grid place-content-center overflow-hidden rounded-[3px] border bg-white transition-colors ${
           active ? 'border-accent ring-1 ring-accent/40' : 'border-edge hover:border-edge-strong'
         }`}
       >
