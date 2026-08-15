@@ -1,0 +1,972 @@
+{
+  "jobId": "df834cf5-f155-42c2-ad5b-4dd49cd5de42",
+  "accepted": true,
+  "document": {
+    "pdfPath": "/data/uploads/df834cf5-f155-42c2-ad5b-4dd49cd5de42/source.pdf",
+    "pageCount": 1,
+    "planPageCount": 1
+  },
+  "pages": [
+    {
+      "pageNumber": 1,
+      "isPlan": true,
+      "planType": "ground_floor_plan",
+      "classifiedBy": "vision",
+      "pageSize": {
+        "width": 1190.5,
+        "height": 841.9
+      },
+      "scale": {
+        "text": "1:100",
+        "ratio": 100.0,
+        "confidence": "high"
+      },
+      "grid": {
+        "columns": [
+          {
+            "ref": "A",
+            "x": 341.4
+          },
+          {
+            "ref": "B",
+            "x": 412.3
+          },
+          {
+            "ref": "C",
+            "x": 455.6
+          },
+          {
+            "ref": "D",
+            "x": 486.0
+          },
+          {
+            "ref": "E",
+            "x": 498.1
+          },
+          {
+            "ref": "F",
+            "x": 547.4
+          },
+          {
+            "ref": "G",
+            "x": 604.3
+          },
+          {
+            "ref": "H",
+            "x": 664.8
+          },
+          {
+            "ref": "I",
+            "x": 686.5
+          },
+          {
+            "ref": "L",
+            "x": 766.0
+          },
+          {
+            "ref": "K",
+            "x": 814.8
+          }
+        ],
+        "rows": [
+          {
+            "ref": "1",
+            "y": 125.6
+          },
+          {
+            "ref": "2",
+            "y": 165.2
+          },
+          {
+            "ref": "3",
+            "y": 232.0
+          },
+          {
+            "ref": "4",
+            "y": 265.1
+          },
+          {
+            "ref": "5",
+            "y": 310.5
+          },
+          {
+            "ref": "6",
+            "y": 397.6
+          },
+          {
+            "ref": "7",
+            "y": 463.4
+          },
+          {
+            "ref": "8",
+            "y": 486.8
+          },
+          {
+            "ref": "9",
+            "y": 508.7
+          },
+          {
+            "ref": "10",
+            "y": 530.9
+          },
+          {
+            "ref": "11",
+            "y": 572.0
+          },
+          {
+            "ref": "12",
+            "y": 638.6
+          },
+          {
+            "ref": "13",
+            "y": 669.8
+          },
+          {
+            "ref": "14",
+            "y": 698.1
+          }
+        ]
+      },
+      "nodes": [],
+      "components": [
+        {
+          "id": "room-001",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              316.75,
+              530.9
+            ],
+            [
+              412.3,
+              530.9
+            ],
+            [
+              412.3,
+              572.0
+            ],
+            [
+              316.75,
+              572.0
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "\u00b7~B/10~11",
+          "areaM2": 5.0,
+          "name": "TOILET",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 2% of the printed 5.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-002",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              664.8,
+              310.5
+            ],
+            [
+              766.0,
+              310.5
+            ],
+            [
+              766.0,
+              463.4
+            ],
+            [
+              664.8,
+              463.4
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "H~L/5~7",
+          "areaM2": 19.0,
+          "name": "SITTING ROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 1% of the printed 19.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-003",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              341.4,
+              397.6
+            ],
+            [
+              498.1,
+              397.6
+            ],
+            [
+              498.1,
+              486.8
+            ],
+            [
+              341.4,
+              486.8
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "A~E/6~8",
+          "areaM2": 17.0,
+          "name": "BEDROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 2% of the printed 17.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-004",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              340.97,
+              241.67
+            ],
+            [
+              461.23,
+              241.67
+            ],
+            [
+              461.23,
+              361.93
+            ],
+            [
+              340.97,
+              361.93
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "A~B/5",
+          "areaM2": 18.0,
+          "name": "SITTING ROOM",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-005",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              686.5,
+              165.2
+            ],
+            [
+              766.0,
+              165.2
+            ],
+            [
+              766.0,
+              310.5
+            ],
+            [
+              686.5,
+              310.5
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "I~L/2~5",
+          "areaM2": 15.0,
+          "name": "BEDROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 4% of the printed 15.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-006",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              498.1,
+              165.2
+            ],
+            [
+              604.3,
+              165.2
+            ],
+            [
+              604.3,
+              265.1
+            ],
+            [
+              498.1,
+              265.1
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "E~G/2~4",
+          "areaM2": 12.0,
+          "name": "KITCHEN",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 10% of the printed 12.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-007",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              316.75,
+              165.2
+            ],
+            [
+              412.3,
+              165.2
+            ],
+            [
+              412.3,
+              265.1
+            ],
+            [
+              316.75,
+              265.1
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "\u00b7~B/2~4",
+          "areaM2": 13.0,
+          "name": "BEDROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 9% of the printed 13.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-008",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              486.0,
+              310.5
+            ],
+            [
+              604.3,
+              310.5
+            ],
+            [
+              604.3,
+              397.6
+            ],
+            [
+              486.0,
+              397.6
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "D~G/5~6",
+          "areaM2": 13.0,
+          "name": "BEDROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 1% of the printed 13.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-009",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              455.6,
+              232.0
+            ],
+            [
+              547.4,
+              232.0
+            ],
+            [
+              547.4,
+              310.5
+            ],
+            [
+              455.6,
+              310.5
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "C~F/3~5",
+          "areaM2": 10.0,
+          "name": "LOBBY",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 10% of the printed 10.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-010",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              338.75,
+              335.85
+            ],
+            [
+              387.85,
+              335.85
+            ],
+            [
+              387.85,
+              384.95
+            ],
+            [
+              338.75,
+              384.95
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "A~B/5~6",
+          "areaM2": 3.0,
+          "name": "PORCH",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-011",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              455.6,
+              486.8
+            ],
+            [
+              486.0,
+              486.8
+            ],
+            [
+              486.0,
+              572.0
+            ],
+            [
+              455.6,
+              572.0
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "C~D/8~11",
+          "areaM2": 3.0,
+          "name": "LOBBY",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 7% of the printed 3.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-012",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              547.4,
+              638.6
+            ],
+            [
+              604.3,
+              638.6
+            ],
+            [
+              604.3,
+              717.9
+            ],
+            [
+              547.4,
+              717.9
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "F~G/12~\u00b7",
+          "areaM2": 5.0,
+          "name": "ENTRANCE PORCH",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 12% of the printed 5.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-013",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              643.66,
+              521.96
+            ],
+            [
+              683.74,
+              521.96
+            ],
+            [
+              683.74,
+              562.04
+            ],
+            [
+              643.66,
+              562.04
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "H/10~11",
+          "areaM2": 2.0,
+          "name": "TOILET",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-014",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              617.25,
+              319.65
+            ],
+            [
+              673.95,
+              319.65
+            ],
+            [
+              673.95,
+              376.35
+            ],
+            [
+              617.25,
+              376.35
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "G~H/5~6",
+          "areaM2": 4.0,
+          "name": "TOILET",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-015",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              341.4,
+              572.0
+            ],
+            [
+              455.6,
+              572.0
+            ],
+            [
+              455.6,
+              717.9
+            ],
+            [
+              341.4,
+              717.9
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "A~C/11~\u00b7",
+          "areaM2": 21.0,
+          "name": "SITTING ROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 1% of the printed 21.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-016",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              604.3,
+              232.0
+            ],
+            [
+              664.8,
+              232.0
+            ],
+            [
+              664.8,
+              310.5
+            ],
+            [
+              604.3,
+              310.5
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "G~H/3~5",
+          "areaM2": 6.0,
+          "name": "LOBBY",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 2% of the printed 6.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-017",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              547.4,
+              463.4
+            ],
+            [
+              686.5,
+              463.4
+            ],
+            [
+              686.5,
+              530.9
+            ],
+            [
+              547.4,
+              530.9
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "F~I/7~10",
+          "areaM2": 12.0,
+          "name": "BEDROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 3% of the printed 12.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-018",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              512.86,
+              682.86
+            ],
+            [
+              552.94,
+              682.86
+            ],
+            [
+              552.94,
+              722.94
+            ],
+            [
+              512.86,
+              722.94
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "E~F/14",
+          "areaM2": 2.0,
+          "name": "TOILET",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-019",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              455.46,
+              168.16
+            ],
+            [
+              495.54,
+              168.16
+            ],
+            [
+              495.54,
+              208.24
+            ],
+            [
+              455.46,
+              208.24
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "C~D/2~3",
+          "areaM2": 2.0,
+          "name": "TOILET",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-020",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              341.4,
+              125.6
+            ],
+            [
+              412.3,
+              125.6
+            ],
+            [
+              412.3,
+              165.2
+            ],
+            [
+              341.4,
+              165.2
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "A~B/1~2",
+          "areaM2": 3.0,
+          "name": "TOILET",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 16% of the printed 3.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-021",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              455.6,
+              638.6
+            ],
+            [
+              498.1,
+              638.6
+            ],
+            [
+              498.1,
+              717.9
+            ],
+            [
+              455.6,
+              717.9
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "C~E/12~\u00b7",
+          "areaM2": 4.0,
+          "name": "ENTRANCE PORCH",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 5% of the printed 4.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-022",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              498.1,
+              572.0
+            ],
+            [
+              686.5,
+              572.0
+            ],
+            [
+              686.5,
+              698.1
+            ],
+            [
+              498.1,
+              698.1
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "E~I/11~14",
+          "areaM2": 29.0,
+          "name": "SITTING ROOM",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 2% of the printed 29.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-023",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              604.3,
+              165.2
+            ],
+            [
+              686.5,
+              165.2
+            ],
+            [
+              686.5,
+              232.0
+            ],
+            [
+              604.3,
+              232.0
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "G~I/2~3",
+          "areaM2": 6.0,
+          "name": "KITCHEN",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 14% of the printed 6.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-024",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              758.85,
+              339.05
+            ],
+            [
+              807.95,
+              339.05
+            ],
+            [
+              807.95,
+              388.15
+            ],
+            [
+              758.85,
+              388.15
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "L~K/5~6",
+          "areaM2": 3.0,
+          "name": "PORCH",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-025",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              341.4,
+              463.4
+            ],
+            [
+              412.3,
+              463.4
+            ],
+            [
+              412.3,
+              508.7
+            ],
+            [
+              341.4,
+              508.7
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "A~B/7~9",
+          "areaM2": 4.0,
+          "name": "KITCHEN",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 0% of the printed 4.0 m\u00b2"
+          ]
+        },
+        {
+          "id": "room-026",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              601.36,
+              411.76
+            ],
+            [
+              641.44,
+              411.76
+            ],
+            [
+              641.44,
+              451.84
+            ],
+            [
+              601.36,
+              451.84
+            ]
+          ],
+          "confidence": "medium",
+          "gridRef": "G~H/6~7",
+          "areaM2": 2.0,
+          "name": "VER.",
+          "notes": [
+            "No grid rectangle matched the printed area; extent is a square of the correct area, approximate in shape"
+          ]
+        },
+        {
+          "id": "room-027",
+          "layer": "rooms",
+          "type": "room",
+          "polyline": [
+            [
+              498.1,
+              397.6
+            ],
+            [
+              547.4,
+              397.6
+            ],
+            [
+              547.4,
+              530.9
+            ],
+            [
+              498.1,
+              530.9
+            ]
+          ],
+          "confidence": "high",
+          "gridRef": "E~F/6~10",
+          "areaM2": 8.0,
+          "name": "KITCHEN",
+          "notes": [
+            "Outline snapped to the setting-out grid; area is within 2% of the printed 8.0 m\u00b2"
+          ]
+        }
+      ],
+      "counts": {
+        "rooms": 27
+      },
+      "notes": [
+        "Grid lines and dimensions are red",
+        "Walls are black"
+      ]
+    }
+  ],
+  "totals": {
+    "rooms": 27
+  },
+  "tokenUsage": {
+    "calls": [
+      {
+        "step": "classify_page_1",
+        "model": "qwen3.7-plus",
+        "prompt_tokens": 3815,
+        "completion_tokens": 1466,
+        "total_tokens": 5281
+      }
+    ],
+    "totals": {
+      "prompt_tokens": 3815,
+      "completion_tokens": 1466,
+      "total_tokens": 5281
+    }
+  },
+  "extractedAt": "2026-08-15T02:21:00.786416+00:00"
+}
