@@ -17,24 +17,23 @@ export function Cta() {
           <SiteScene show={true} className="pointer-events-none absolute inset-x-0 bottom-0 h-[88%] w-full text-paper opacity-5" />
           <div className="relative">
             <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight text-paper sm:text-4xl">
-              Open a drawing and draw your first layer.
+              Takeoffs you can verify, not just trust.
             </h2>
             <p className="mx-auto mt-5 max-w-lg text-base leading-relaxed text-paper/70">
-              The workspace runs locally. Point it at a plan PDF, calibrate the scale, and
-              see the quantities come out.
+              Built for AEC teams who need to see the work, not just the number.
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <a
                 href={appUrl}
-                className="rounded-lg bg-accent px-6 py-3 text-sm font-medium text-paper-2 transition-transform hover:-translate-y-0.5"
+                className="rounded-lg bg-accent px-6 py-3 text-sm min-w-45 font-medium text-paper-2 transition-transform hover:-translate-y-0.5"
               >
                 Open the workspace
               </a>
               <a
                 href={`mailto:${contactEmail}?subject=Takeoff%20AI%20demo`}
-                className=" bg-ink rounded-lg border border-paper/30 px-6 py-3 text-sm font-medium text-paper transition-colors hover:border-accent"
+                className=" bg-ink rounded-lg border border-paper/30 px-6 py-3 w-45 text-sm font-medium text-paper transition-colors hover:border-accent"
               >
-                Request a demo
+                Contact us
               </a>
             </div>
           </div>

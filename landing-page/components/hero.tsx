@@ -37,15 +37,15 @@ export function Hero() {
         <div className="mt-9 flex flex-wrap items-center gap-3">
           <a
             href={appUrl}
-            className="rounded-lg bg-accent px-5 py-3 text-sm font-medium text-paper-2 shadow-[0_10px_24px_-12px_rgba(228,87,46,0.9)] transition-transform hover:-translate-y-0.5"
+            className="rounded-lg bg-accent px-5 py-3 text-sm font-medium min-w-45 text-paper-2 shadow-[0_10px_24px_-12px_rgba(228,87,46,0.9)] transition-transform hover:-translate-y-0.5"
           >
             Open the workspace
           </a>
           <a
             href={`mailto:${contactEmail}?subject=Takeoff%20AI%20demo`}
-            className="rounded-lg border border-rule-strong px-5 py-3 text-sm font-medium text-ink transition-colors hover:border-ink hover:bg-paper-3"
+            className="rounded-lg border border-rule-strong px-5 py-3 min-w-45 text-sm text-center font-medium text-ink transition-colors hover:border-ink hover:bg-paper-3"
           >
-            Request a demo
+            Contact us
           </a>
           <p className="font-mono text-xs text-ink-faint">
             PDFs are Secured · Not used to train models

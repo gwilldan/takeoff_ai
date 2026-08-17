@@ -21,9 +21,7 @@ export function Capabilities() {
             Exactly what the pipeline handles.
           </h2>
           <p className="mt-5 max-w-md text-base leading-relaxed text-ink-soft">
-            No accuracy percentage is quoted here, because the honest answer depends on
-            your drawing set. Run it on your own sheets and read the layer totals against
-            a manual take.
+            What the pipeline handles is exactly what&apos;s on your sheet, nothing assumed. Upload one and check the totals yourself.
           </p>
         </div>
 
