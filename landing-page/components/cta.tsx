@@ -20,7 +20,7 @@ export function Cta() {
               Takeoffs you can verify, not just trust.
             </h2>
             <p className="mx-auto mt-5 max-w-lg text-base leading-relaxed text-paper/70">
-              Built for AEC teams who need to see the work, not just the number.
+              Built for AEC teams who need to see the detailed workflow, not just numbers.
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <a
