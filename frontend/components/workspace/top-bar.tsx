@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useRef } from 'react';
 
 export type TopBarProps = {
@@ -28,12 +29,7 @@ export function TopBar({
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-edge bg-panel px-4">
       <div className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className="grid h-6 w-6 place-items-center rounded-md bg-ink font-mono text-[11px] font-bold text-white"
-        >
-          T
-        </span>
+        <Image src="/takeoffai-icon.svg" alt="icon" width={28} height={28} />
         <span className="text-sm font-semibold tracking-tight">
           Takeoff<span className="text-accent">AI</span>
         </span>
