@@ -34,7 +34,7 @@ export function Features() {
       <div className="mx-auto max-w-6xl px-6 py-20">
         <p className="rule-label">What you get</p>
         <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-          Built for the part everyone skips: checking the numbers.
+          Built for the part everyone skips: verifying quantites.
         </h2>
 
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

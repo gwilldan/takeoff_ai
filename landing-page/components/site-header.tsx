@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 const NAV_LINKS = [
   { href: '#how-it-works', label: 'How it works' },
   { href: '#features', label: 'Features' },
@@ -11,12 +13,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-rule/70 bg-paper/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-6">
         <a href="#top" className="flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="grid h-7 w-7 place-items-center rounded-[7px] bg-ink font-mono text-[13px] font-bold text-paper"
-          >
-            T
-          </span>
+          <Image src="/takeoffai-icon.svg" alt="icon" width={28} height={28} />
           <span className="text-[15px] font-semibold tracking-tight text-ink">
             Takeoff<span className="text-accent">AI</span>
           </span>

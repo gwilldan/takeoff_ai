@@ -1,16 +1,13 @@
+import Image from "next/image";
+
 export function SiteFooter() {
-  const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'hello@takeoff.ai';
+  const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'support@takeoffai.xyz';
 
   return (
     <footer className="border-t border-rule bg-paper-2">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="grid h-6 w-6 place-items-center rounded-md bg-ink font-mono text-[11px] font-bold text-paper"
-          >
-            T
-          </span>
+          <Image src="/takeoffai-icon.svg" alt="icon" width={28} height={28} />
           <span className="text-sm font-semibold text-ink">
             Takeoff<span className="text-accent">AI</span>
           </span>
