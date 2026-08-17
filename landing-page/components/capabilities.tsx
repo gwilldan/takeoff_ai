@@ -4,11 +4,11 @@ type Capability = {
 };
 
 const CAPABILITIES: Capability[] = [
-  { label: 'Input', value: 'Multi-page plan PDFs, up to 50 MB' },
-  { label: 'Read from each page', value: 'Text spans, line segments, curves, coordinates' },
-  { label: 'Derived automatically', value: 'Drawing scale, walls, rooms, openings, dimensions' },
-  { label: 'Units', value: 'Millimetres, metres, square metres' },
-  { label: 'Runs on', value: 'Your own infrastructure, via Docker Compose' }
+  { label: 'Input', value: 'Multi-page AEC PDFs (50MB max), stored securely.' },
+  { label: 'Read from each page', value: 'Agent extracts text, line segments, curves, coordinates' },
+  { label: 'Derived automatically', value: 'Agent computes required length, area and volume' },
+  { label: 'Annotation ', value: 'Extracted elements show on PDF for verification' },
+  { label: 'Output ', value: 'A documented Bill of Quantities, exportable in major formats.' }
 ];
 
 export function Capabilities() {
