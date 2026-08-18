@@ -25,6 +25,7 @@ export function Cta() {
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <a
                 href={appUrl}
+                target="_blank"
                 className="rounded-lg bg-accent px-6 py-3 text-sm min-w-45 font-medium text-paper-2 transition-transform hover:-translate-y-0.5"
               >
                 Open the workspace

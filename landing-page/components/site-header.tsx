@@ -37,6 +37,7 @@ export function SiteHeader() {
 
         <a
           href={appUrl}
+          target="_blank"
           className=" rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-accent"
         >
           Open the workspace

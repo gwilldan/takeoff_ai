@@ -37,6 +37,7 @@ export function Hero() {
         <div className="mt-9 flex flex-wrap items-center gap-3">
           <a
             href={appUrl}
+            target="_blank"
             className="rounded-lg bg-accent px-5 py-3 text-sm font-medium min-w-45 text-paper-2 shadow-[0_10px_24px_-12px_rgba(228,87,46,0.9)] transition-transform hover:-translate-y-0.5"
           >
             Open the workspace
