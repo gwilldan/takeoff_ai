@@ -48,9 +48,6 @@ export function Hero() {
           >
             Contact us
           </a>
-          <p className="font-mono text-xs text-ink-faint">
-            PDFs are Secured · Not used to train models
-          </p>
         </div>
 
         <div className="mt-14">
