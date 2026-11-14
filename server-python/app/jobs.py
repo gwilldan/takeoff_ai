@@ -1,60 +1,61 @@
 """
 Job records live in Redis as JSON under `<prefix><jobId>` with a sliding TTL.
 
-Both the API and the worker read and write through these three functions, so
-the record shape the frontend polls is defined in exactly one place.
+`update_job` runs inside a WATCH transaction so page tasks finishing on
+different workers at the same moment cannot overwrite each other's pages.
 """
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Callable
+
+from redis import WatchError
 
 from app.config import settings
+from app.models import JobRecord, utcnow
 from app.redis_client import get_redis
 
-JobStatus = Literal["queued", "processing", "completed", "failed"]
-Job = dict[str, Any]
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+Mutation = Callable[[JobRecord], None] | dict[str, Any]
 
 
 def _key(job_id: str) -> str:
     return f"{settings.redis_job_prefix}{job_id}"
 
 
-def create_job(job_id: str, document_path: str, notification_url: str | None) -> Job:
-    now = _now()
-    job: Job = {
-        "id": job_id,
-        "status": "queued",
-        "createdAt": now,
-        "updatedAt": now,
-        "documentPath": document_path,
-        "attempts": 0,
-    }
-    if notification_url:
-        job["notificationUrl"] = notification_url
-    save_job(job)
+def save_job(job: JobRecord, pipe=None) -> JobRecord:
+    (pipe or get_redis()).set(_key(job.id), job.model_dump_json(by_alias=True, exclude_none=True), ex=settings.job_ttl_seconds)
     return job
 
 
-def save_job(job: Job) -> None:
-    get_redis().set(_key(job["id"]), json.dumps(job, default=str), ex=settings.job_ttl_seconds)
+def create_job(job_id: str, document_path: str, notification_url: str | None) -> JobRecord:
+    return save_job(JobRecord(id=job_id, document_path=document_path, notification_url=notification_url))
 
 
-def get_job(job_id: str) -> Job | None:
+def get_job(job_id: str) -> JobRecord | None:
     raw = get_redis().get(_key(job_id))
-    return json.loads(raw) if raw else None
+    return JobRecord.model_validate_json(raw) if raw else None
 
 
-def update_job(job_id: str, patch: Job) -> Job | None:
-    job = get_job(job_id)
-    if job is None:
-        return None
-    job.update(patch, updatedAt=_now())
-    save_job(job)
-    return job
+def update_job(job_id: str, mutation: Mutation) -> JobRecord | None:
+    """Apply a field patch or a mutator callable atomically; returns the saved record."""
+    key = _key(job_id)
+
+    with get_redis().pipeline() as pipe:
+        while True:
+            try:
+                pipe.watch(key)
+                raw = pipe.get(key)
+                if raw is None:
+                    return None
+                job = JobRecord.model_validate_json(raw)
+                if callable(mutation):
+                    mutation(job)
+                else:
+                    job = job.model_copy(update=mutation)
+                job.updated_at = utcnow()
+                pipe.multi()
+                save_job(job, pipe)
+                pipe.execute()
+                return job
+            except WatchError:
+                continue

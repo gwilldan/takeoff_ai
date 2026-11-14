@@ -1,112 +1,147 @@
 """
-The extraction task — one Celery task per uploaded document.
+Extraction as a Celery chord: one task per page, fanning in to a finalizer.
 
-Mirrors the job lifecycle the frontend polls: queued → processing (with partial
-page results streamed into `result`) → completed | failed. Transient failures
-retry with exponential backoff; unrecoverable ones (bad path, missing record)
-fail immediately.
+    extract_document ──► extract_page × N ──► finalize_extraction
+
+Each page is appended to the job record the moment it finishes, so the
+frontend can annotate page 1 while page 40 is still running. Pages retry
+independently; a page that exhausts its retries is recorded as skipped so one
+bad sheet never sinks the document.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
+
+from celery import chord
 
 from app.celery_app import celery_app
 from app.config import settings
-from app.extractor import extract_pdf_with_agent
 from app.extractor.cache import get_page_count
+from app.extractor.llm import TokenTracker
+from app.extractor.pipeline import NOT_A_PLAN_MESSAGE, process_page
 from app.jobs import get_job, update_job
-from app.notifier import build_notification_payload, send_notification
+from app.models import DocumentProgress, ExtractionResult, JobRecord, utcnow
+from app.notifier import notify_completion
 from app.output_writer import save_extraction_output
 from app.storage import resolve_document
 
 log = logging.getLogger(__name__)
+
+RETRY_BACKOFF_S = max(settings.queue_backoff_delay_ms / 1000, 1)
+MAX_RETRIES = settings.queue_attempts - 1
 
 
 class UnrecoverableError(Exception):
     """Retrying would not help; the job fails on the first attempt."""
 
 
-def enqueue_extraction(job: dict[str, Any]) -> None:
-    extract_document.apply_async(
-        kwargs={"job_id": job["id"]},
-        task_id=job["id"],
-        queue=settings.queue_name,
-    )
+def enqueue_extraction(job: JobRecord) -> None:
+    extract_document.apply_async(kwargs={"job_id": job.id}, task_id=job.id, queue=settings.queue_name)
 
 
-def _page_writer(job_id: str, page_count: int):
-    """Publish each finished page into the job's `result` so the poll shows progress."""
-    pages: list[dict[str, Any]] = []
-
-    def on_page(page: dict[str, Any]) -> None:
-        pages.append(page)
-        update_job(job_id, {
-            "status": "processing",
-            "result": {
-                "partial": True,
-                "document": {
-                    "pageCount": page_count,
-                    "pagesProcessed": len(pages),
-                    "planPageCount": sum(1 for p in pages if p.get("isPlan")),
-                },
-                "pages": list(pages),
-            },
-        })
-
-    return on_page
+def _fail(job_id: str, error: Exception) -> None:
+    update_job(job_id, {"status": "failed", "error": str(error), "completed_at": utcnow()})
 
 
 @celery_app.task(
     name="extract-document",
-    bind=True,
+    ignore_result=True,
     autoretry_for=(Exception,),
     dont_autoretry_for=(UnrecoverableError,),
-    max_retries=settings.queue_attempts - 1,
-    retry_backoff=max(settings.queue_backoff_delay_ms / 1000, 1),
+    max_retries=MAX_RETRIES,
+    retry_backoff=RETRY_BACKOFF_S,
     retry_jitter=False,
 )
-def extract_document(self, job_id: str) -> None:
+def extract_document(job_id: str) -> None:
+    """Validate the upload, open the progress record and fan out one task per page."""
     job = get_job(job_id)
     if job is None:
         raise UnrecoverableError("Job record not found")
 
-    update_job(job_id, {"status": "processing", "attempts": int(job.get("attempts", 0)) + 1})
-
     try:
         try:
-            document = resolve_document(job.get("documentPath") or "")
+            document = resolve_document(job.document_path)
         except ValueError as exc:
             raise UnrecoverableError(str(exc)) from exc
 
         page_count = get_page_count(str(document))
-        result = extract_pdf_with_agent(document, on_page=_page_writer(job_id, page_count))
-        save_extraction_output(job_id, result)
+        log.info("[%s] %s — %d page(s)", job_id, document, page_count)
 
-        completed = update_job(job_id, {
-            "status": "completed",
-            "result": result,
-            "error": None,
-            "completedAt": result.get("extractedAt"),
-        }) or job
+        def start(job: JobRecord) -> None:
+            job.status = "processing"
+            job.attempts += 1
+            job.error = None
+            job.result = ExtractionResult(document=DocumentProgress(page_count=page_count, pdf_path=str(document)))
 
-        _notify(completed, result)
+        update_job(job_id, start)
+
+        header = [extract_page.s(job_id, str(document), index) for index in range(page_count)]
+        chord(header)(finalize_extraction.s(job_id))
     except Exception as exc:
-        update_job(job_id, {
-            "status": "failed",
-            "error": str(exc),
-            "completedAt": datetime.now(timezone.utc).isoformat(),
-        })
+        _fail(job_id, exc)
         raise
 
 
-def _notify(job: dict[str, Any], result: dict[str, Any]) -> None:
-    url = job.get("notificationUrl") or settings.notification_webhook_url
-    if not url:
-        return
+@celery_app.task(name="extract-page", bind=True, max_retries=MAX_RETRIES)
+def extract_page(self, job_id: str, pdf_path: str, page_index: int) -> dict[str, Any]:
+    """Annotate one page and publish it into the job record straight away."""
+    tracker = TokenTracker()
     try:
-        send_notification(url, build_notification_payload(job, result))
+        page = process_page(pdf_path, page_index, tracker)
     except Exception as exc:
-        log.warning("Notification failed for job %s: %s", job["id"], exc)
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=RETRY_BACKOFF_S * 2**self.request.retries)
+        log.warning("[%s] page %d failed after retries: %s", job_id, page_index + 1, exc)
+        page = {
+            "pageNumber": page_index + 1,
+            "isPlan": False,
+            "skippedReason": f"page could not be read: {exc}",
+            "components": [],
+        }
+
+    def publish(job: JobRecord) -> None:
+        if job.result is not None:
+            job.result.add_page(page)
+
+    update_job(job_id, publish)
+    log.info("[%s] page %d: %s", job_id, page["pageNumber"], "plan" if page.get("isPlan") else "skipped")
+    return {"page": page, "tokenUsage": tracker.to_dict()}
+
+
+@celery_app.task(name="finalize-extraction", ignore_result=True)
+def finalize_extraction(page_results: list[dict[str, Any]], job_id: str) -> None:
+    """Close the result once every page is in: totals, token usage, output file, webhook."""
+    try:
+        calls = [c for r in page_results for c in r["tokenUsage"]["calls"]]
+        token_usage = {
+            "calls": calls,
+            "totals": {k: sum(c[k] for c in calls) for k in ("prompt_tokens", "completion_tokens", "total_tokens")},
+        }
+
+        def complete(job: JobRecord) -> None:
+            result = job.result
+            if result is None:
+                return
+            for r in page_results:  # defensive: a page is normally already published
+                if r["page"]["pageNumber"] not in {p["pageNumber"] for p in result.pages}:
+                    result.add_page(r["page"])
+            result.partial = False
+            result.accepted = result.document.plan_page_count > 0
+            result.token_usage = token_usage
+            result.extracted_at = utcnow()
+            if not result.accepted:
+                result.rejection = {"reason": "not_a_construction_plan", "message": NOT_A_PLAN_MESSAGE}
+            job.status = "completed"
+            job.completed_at = result.extracted_at
+
+        job = update_job(job_id, complete)
+        if job is None or job.result is None:
+            raise UnrecoverableError("Job record disappeared before finalize")
+
+        save_extraction_output(job_id, job.result)
+        notify_completion(job)
+    except Exception as exc:
+        _fail(job_id, exc)
+        raise

@@ -8,6 +8,7 @@ token counts are recorded and surfaced in the final extraction result.
 
 from __future__ import annotations
 
+import logging
 import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -15,6 +16,8 @@ from typing import Any, Optional
 from openai import OpenAI
 
 from app.config import settings
+
+log = logging.getLogger(__name__)
 
 
 _client: OpenAI | None = None
@@ -160,11 +163,9 @@ def chat_with_tracking(
     usage = _extract_usage(completion, step, model)
     tracker.calls.append(usage)
 
-    print(
-        f"[llm:{step}] model={model} "
-        f"prompt_tokens={usage.prompt_tokens} "
-        f"completion_tokens={usage.completion_tokens} "
-        f"total={usage.total_tokens}"
+    log.info(
+        "[%s] model=%s prompt_tokens=%d completion_tokens=%d total=%d",
+        step, model, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
     )
 
     message = {

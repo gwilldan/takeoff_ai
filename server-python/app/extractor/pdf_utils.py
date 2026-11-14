@@ -7,9 +7,12 @@ range — calling .get_text() on that then fails with "page is None".
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import fitz
+
+log = logging.getLogger(__name__)
 
 
 class PdfPageError(ValueError):
@@ -108,10 +111,7 @@ def resolve_page_index(doc: fitz.Document, page_index: int | None = None) -> int
     if _page_content_score(page) == 0:
         best = find_best_page_index(doc)
         if best != page_index:
-            print(
-                f"[pdf] Page {page_index} is empty — "
-                f"falling back to page {best}"
-            )
+            log.info("Page %d is empty — falling back to page %d", page_index, best)
             return best
 
     return page_index

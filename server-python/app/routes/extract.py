@@ -1,15 +1,24 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from pydantic import HttpUrl, TypeAdapter, ValidationError
+from pydantic import BaseModel, HttpUrl, TypeAdapter, ValidationError
 
 from app.config import settings
 from app.jobs import create_job, update_job
-from app.storage import UploadTooLarge, remove_document, store_document
+from app.models import JobStatus
+from app.storage import NotAPdf, UploadTooLarge, remove_document, store_document
 from app.tasks import enqueue_extraction
 
 router = APIRouter(prefix="/extract", tags=["extract"])
 _url = TypeAdapter(HttpUrl)
+
+
+class StartExtractionResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    statusUrl: str
+    documentPath: str
+    queue: str
 
 
 def _read_notification_url(value: str | None) -> str | None:
@@ -21,7 +30,7 @@ def _read_notification_url(value: str | None) -> str | None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "notificationUrl must be a valid URL")
 
 
-@router.post("", status_code=status.HTTP_202_ACCEPTED)
+@router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=StartExtractionResponse)
 def start_extraction(
     document: UploadFile | None = File(default=None),
     notificationUrl: str | None = Form(default=None),
@@ -34,6 +43,9 @@ def start_extraction(
 
     try:
         path = store_document(job_id, document.file)
+    except NotAPdf:
+        remove_document(job_id)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Document must be a PDF")
     except UploadTooLarge:
         remove_document(job_id)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "File too large")
@@ -50,10 +62,6 @@ def start_extraction(
             {"error": "Failed to start extraction workflow", "details": str(exc)},
         )
 
-    return {
-        "jobId": job_id,
-        "status": job["status"],
-        "statusUrl": f"/jobs/{job_id}",
-        "documentPath": job["documentPath"],
-        "queue": settings.queue_name,
-    }
+    return StartExtractionResponse(
+        jobId=job.id, status=job.status, statusUrl=f"/jobs/{job.id}", documentPath=job.document_path, queue=settings.queue_name
+    )

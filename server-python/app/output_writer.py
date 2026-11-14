@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.models import ExtractionResult
 
 log = logging.getLogger(__name__)
 
 
-def save_extraction_output(job_id: str, result: dict[str, Any]) -> Path:
+def save_extraction_output(job_id: str, extraction: ExtractionResult) -> Path:
     """Persist result JSON to `<EXTRACTION_OUTPUT_DIR>/<jobId>.json`."""
+    result = extraction.to_wire()
     out_dir = Path(settings.extraction_output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

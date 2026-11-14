@@ -16,6 +16,7 @@ simply was not a construction plan.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -29,6 +30,8 @@ from app.extractor.grid import detect_grid, grid_ref_for_point
 from app.extractor.llm import TokenTracker
 from app.extractor.pdf_utils import PdfPageError
 from app.extractor.validate import validate_walls
+
+log = logging.getLogger(__name__)
 
 OnPage = Callable[[dict], None]
 
@@ -175,7 +178,7 @@ def extract_pdf(
     except PdfPageError as exc:
         raise ValueError(str(exc)) from exc
 
-    print(f"[pipeline] {resolved} — {page_count} page(s)")
+    log.info("%s — %d page(s)", resolved, page_count)
 
     pages: list[dict] = []
 
@@ -194,12 +197,9 @@ def extract_pdf(
 
         if page_result.get("isPlan"):
             counts = page_result.get("counts") or {}
-            print(f"[pipeline] page {page_result['pageNumber']}: plan — {counts}")
+            log.info("page %s: plan — %s", page_result["pageNumber"], counts)
         else:
-            print(
-                f"[pipeline] page {page_result['pageNumber']}: skipped — "
-                f"{page_result.get('skippedReason')}"
-            )
+            log.info("page %s: skipped — %s", page_result["pageNumber"], page_result.get("skippedReason"))
 
         if on_page is not None:
             on_page(page_result)
@@ -233,10 +233,7 @@ def extract_pdf(
             "message": NOT_A_PLAN_MESSAGE,
         }
 
-    print(
-        f"[pipeline] done — {len(plan_pages)}/{page_count} plan page(s), "
-        f"total_tokens={tracker.total_tokens}"
-    )
+    log.info("done — %d/%d plan page(s), total_tokens=%d", len(plan_pages), page_count, tracker.total_tokens)
 
     return result
 

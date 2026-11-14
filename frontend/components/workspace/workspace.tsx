@@ -92,23 +92,29 @@ export function Workspace() {
     [dispatch, state.calibration]
   );
 
-  // Annotate as soon as the job finishes. Guarded on the completion timestamp so
-  // re-renders and continued polling cannot re-import over the user's edits.
-  const completedAt = extraction.job?.status === 'completed' ? extraction.job.id : null;
+  // Annotate as each page lands. The worker publishes pages into the partial
+  // result one at a time, so the import re-runs whenever the processed count
+  // moves and once more on completion. Keyed on job + progress so re-renders
+  // and polls that bring nothing new cannot re-import over the user's edits.
+  const job = extraction.job;
+  const progressKey =
+    job?.result && (job.status === 'processing' || job.status === 'completed')
+      ? `${job.id}:${job.status}:${job.result.document?.pagesProcessed ?? job.result.pages?.length ?? 0}`
+      : null;
 
   useEffect(() => {
-    if (!completedAt || autoImportedRef.current === completedAt) {
+    if (!progressKey || autoImportedRef.current === progressKey) {
       return;
     }
 
-    const result = extraction.job?.result as ExtractionDocument | undefined;
-    if (!result) {
+    const result = job?.result;
+    if (!result?.pages?.length) {
       return;
     }
 
-    autoImportedRef.current = completedAt;
+    autoImportedRef.current = progressKey;
     handleImportExtraction(result);
-  }, [completedAt, extraction.job, handleImportExtraction]);
+  }, [progressKey, job, handleImportExtraction]);
 
   const handleRunExtraction = useCallback(() => {
     if (!file) {

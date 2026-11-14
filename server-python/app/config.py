@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     port: int = 4000
+    frontend_origin: str = "http://localhost:3000"
     redis_url: str = "redis://127.0.0.1:6379"
     redis_job_prefix: str = "pdf:extract:job:"
     job_ttl_seconds: int = 60 * 60 * 24 * 7
@@ -34,6 +35,11 @@ class Settings(BaseSettings):
 
     extraction_cache_dir: str = "/tmp/takeoff-extraction-cache"
     extraction_output_dir: str = "/data/output"
+
+    @property
+    def frontend_origins(self) -> list[str]:
+        """Comma-separated `FRONTEND_ORIGIN` → the only origins allowed by CORS."""
+        return [o.strip() for o in self.frontend_origin.split(",") if o.strip()]
 
     def model_post_init(self, __context) -> None:
         if self.llm_vision_model is None:

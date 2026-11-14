@@ -7,8 +7,14 @@ from pathlib import Path
 
 from app.config import settings
 
+PDF_MAGIC = b"%PDF-"
+
 
 class UploadTooLarge(Exception):
+    pass
+
+
+class NotAPdf(Exception):
     pass
 
 
@@ -21,12 +27,17 @@ def document_path(job_id: str) -> Path:
 
 
 def store_document(job_id: str, stream, chunk_size: int = 1024 * 1024) -> Path:
-    """Stream the upload to disk, refusing anything over the configured size."""
+    """Stream the upload to disk, refusing non-PDFs and anything over the size limit."""
     target = document_path(job_id)
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    written = 0
+    head = stream.read(1024)
+    if PDF_MAGIC not in head:  # the spec allows the header anywhere in the first 1024 bytes
+        raise NotAPdf()
+
+    written = len(head)
     with target.open("wb") as out:
+        out.write(head)
         while chunk := stream.read(chunk_size):
             written += len(chunk)
             if written > settings.max_upload_bytes:

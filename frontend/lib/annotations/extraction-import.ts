@@ -44,7 +44,7 @@ export type ExtractedPage = {
 export type ExtractionDocument = {
   accepted?: boolean;
   partial?: boolean;
-  document?: { pageCount?: number; pagesProcessed?: number; planPageCount?: number };
+  document?: { pageCount?: number; pagesProcessed?: number; planPageCount?: number; pdfPath?: string };
   pages?: ExtractedPage[];
   totals?: Record<string, number>;
   rejection?: { reason: string; message: string };

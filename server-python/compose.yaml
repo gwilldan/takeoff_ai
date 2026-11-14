@@ -19,6 +19,7 @@ services:
     environment:
       <<: *app-env
       PORT: 4000
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-pdf_extract}:${POSTGRES_PASSWORD:-pdf_extract}@postgres:5432/${POSTGRES_DB:-pdf_extract}
     ports:
       - 127.0.0.1:4000:4000

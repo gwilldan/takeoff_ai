@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/server-python/.venv/bin/python",
+  "python.analysis.extraPaths": ["${workspaceFolder}/server-python"],
+  "python.testing.pytestEnabled": true,
+  "python.testing.cwd": "${workspaceFolder}/server-python",
+  "python.testing.pytestArgs": ["tests"]
+}

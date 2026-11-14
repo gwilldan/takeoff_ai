@@ -39,7 +39,7 @@ export function ExtractionPanel({
   onImport,
   importedAt
 }: ExtractionPanelProps) {
-  const result = job?.result as ExtractionDocument | undefined;
+  const result = job?.result;
 
   const layers = useMemo(() => layersFromExtraction(result), [result]);
   const componentCount = useMemo(
