@@ -23,10 +23,15 @@ export type ExtractedComponent = {
   widthMm?: number;
   thicknessMm?: number;
   areaM2?: number | null;
+  measuredAreaM2?: number | null;
   hostWallId?: string | null;
   name?: string | null;
   notes?: string[];
+  /** Ids into the page's `nodes`: the shared corner points this outline is drawn through. */
+  nodes?: string[];
 };
+
+export type ExtractedNode = { id: string; point: number[]; gridRef?: string | null };
 
 export type ExtractedPage = {
   pageNumber: number;
@@ -36,6 +41,7 @@ export type ExtractedPage = {
   pageSize?: { width: number; height: number };
   scale?: { text: string; ratio: number; confidence?: string };
   grid?: { columns: { ref: string; x: number }[]; rows: { ref: string; y: number }[] };
+  nodes?: ExtractedNode[];
   components?: ExtractedComponent[];
   counts?: Record<string, number>;
   notes?: string[];

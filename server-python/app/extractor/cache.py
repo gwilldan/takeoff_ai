@@ -1,23 +1,17 @@
 """
-Parse a PDF page into an in-memory cache — no style assumptions, no LLM.
+Parse one PDF page into an in-memory cache: text spans, vector lines, images.
 
-All raw vectors and text are stored here. Downstream query tools, the
-classifier, and the geometry builders read slices from this cache instead of
-re-parsing the PDF.
-
-Coordinates are PDF points with a top-left origin, which is the same space
-pdf.js reports at scale 1 — so anything stored here can drive the frontend
-annotation overlay without a transform.
+Coordinates are PDF points with a top-left origin — the same space pdf.js
+reports at scale 1, so anything stored here drives the frontend overlay with
+no transform.
 """
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from app.extractor.pdf_utils import load_page, open_pdf_document, resolve_page_index
+from app.extractor.pdf_utils import load_page, open_pdf_document
 
 
 @dataclass
@@ -26,61 +20,29 @@ class ExtractionCache:
     page_index: int
     page_width_pts: float
     page_height_pts: float
-    title_block_text: str
+    full_text: str = ""
     text_spans: list[dict] = field(default_factory=list)
     line_segments: list[dict] = field(default_factory=list)
-    curves: list[dict] = field(default_factory=list)
-    rects: list[dict] = field(default_factory=list)
-    color_summary: dict[str, int] = field(default_factory=dict)
-    full_text: str = ""
+    image_coverage: float = 0.0  # share of the page covered by embedded images
 
     @property
     def page_number(self) -> int:
-        """1-based page number, which is what the frontend and users speak."""
         return self.page_index + 1
 
+    @property
+    def title_block_text(self) -> str:
+        return self.full_text[:1200].strip()
+
     def to_summary(self) -> dict:
-        """Compact summary safe to send to the LLM (not the full dump)."""
+        """Compact description safe to put in front of the LLM."""
         return {
-            "page_width_pts": self.page_width_pts,
-            "page_height_pts": self.page_height_pts,
+            "page_size_pts": [self.page_width_pts, self.page_height_pts],
             "title_block_text": self.title_block_text[:800],
             "text_span_count": len(self.text_spans),
             "line_segment_count": len(self.line_segments),
-            "curve_count": len(self.curves),
-            "rect_count": len(self.rects),
-            "color_summary": self.color_summary,
-            "sample_text_labels": [
-                s["text"] for s in self.text_spans[:30]
-                if len(s["text"]) > 1
-            ],
+            "image_coverage": round(self.image_coverage, 2),
+            "sample_text_labels": [s["text"] for s in self.text_spans[:30] if len(s["text"]) > 1],
         }
-
-    def write_json(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "pdf_path": self.pdf_path,
-            "page_index": self.page_index,
-            "page_width_pts": self.page_width_pts,
-            "page_height_pts": self.page_height_pts,
-            "title_block_text": self.title_block_text,
-            "text_spans": self.text_spans,
-            "line_segments": self.line_segments,
-            "curves": self.curves,
-            "rects": self.rects,
-            "color_summary": self.color_summary,
-            "full_text": self.full_text,
-        }
-        path.write_text(json.dumps(payload), encoding="utf-8")
-
-    @classmethod
-    def from_json(cls, path: Path) -> ExtractionCache:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return cls(**data)
-
-
-def _round_point(x: float, y: float) -> tuple[float, float]:
-    return (round(x, 1), round(y, 1))
 
 
 def get_page_count(pdf_path: str) -> int:
@@ -92,123 +54,64 @@ def get_page_count(pdf_path: str) -> int:
 
 
 def _collect_text_spans(page) -> list[dict]:
-    spans: list[dict] = []
-
+    spans = []
     for block in page.get_text("dict")["blocks"]:
-        if "lines" not in block:
-            continue
-        for line in block["lines"]:
+        for line in block.get("lines", []):
             for span in line["spans"]:
                 text = span["text"].strip()
                 if not text:
                     continue
-                bbox = span["bbox"]
+                x0, y0, x1, y1 = (round(v, 1) for v in span["bbox"])
                 spans.append({
-                    "text": text,
-                    "x": round(bbox[0], 1),
-                    "y": round(bbox[1], 1),
-                    "x2": round(bbox[2], 1),
-                    "y2": round(bbox[3], 1),
-                    "cx": round((bbox[0] + bbox[2]) / 2, 1),
-                    "cy": round((bbox[1] + bbox[3]) / 2, 1),
+                    "text": text, "x": x0, "y": y0, "x2": x1, "y2": y1,
+                    "cx": round((x0 + x1) / 2, 1), "cy": round((y0 + y1) / 2, 1),
                     "font_size": round(span["size"], 1),
                 })
-
     return spans
 
 
-def _collect_vectors(page) -> tuple[list[dict], list[dict], list[dict], dict[str, int]]:
-    """
-    Walk the page's drawings once, splitting them into lines, curves and rects.
-
-    One pass matters: get_drawings() re-walks the whole content stream on every
-    call, and a busy plan sheet holds thousands of paths.
-    """
-    line_segments: list[dict] = []
-    curves: list[dict] = []
-    rects: list[dict] = []
-    color_summary: dict[str, int] = {}
-
-    for path_item in page.get_drawings():
-        color = path_item.get("color")
-        color_key = str(list(color)) if color else "none"
-        color_summary[color_key] = color_summary.get(color_key, 0) + 1
-        width = path_item.get("width", 0) or 0
-        fill = path_item.get("fill")
-
-        for item in path_item["items"]:
-            kind = item[0]
-
-            if kind == "l":
-                start = _round_point(item[1].x, item[1].y)
-                end = _round_point(item[2].x, item[2].y)
-                dx = end[0] - start[0]
-                dy = end[1] - start[1]
-                line_segments.append({
-                    "start": list(start),
-                    "end": list(end),
-                    "length_pts": round(math.sqrt(dx * dx + dy * dy), 1),
-                    "color_rgb": list(color) if color else None,
-                    "stroke_width": round(width, 2),
-                })
-
-            elif kind == "c":
-                points = [p for p in item[1:5] if hasattr(p, "x")]
-                if points:
-                    curves.append({
-                        "points": [[round(p.x, 1), round(p.y, 1)] for p in points],
-                        "color_rgb": list(color) if color else None,
-                        "stroke_width": round(width, 2),
-                    })
-
-            elif kind == "re":
-                rect = item[1]
-                rects.append({
-                    "x": round(rect.x0, 1),
-                    "y": round(rect.y0, 1),
-                    "x2": round(rect.x1, 1),
-                    "y2": round(rect.y1, 1),
-                    "width_pts": round(abs(rect.x1 - rect.x0), 1),
-                    "height_pts": round(abs(rect.y1 - rect.y0), 1),
-                    "color_rgb": list(color) if color else None,
-                    "fill_rgb": list(fill) if fill else None,
-                    "stroke_width": round(width, 2),
-                })
-
-    return line_segments, curves, rects, color_summary
+def _collect_lines(page) -> list[dict]:
+    """One pass over the drawings: get_drawings() re-walks the content stream each call."""
+    lines = []
+    for path in page.get_drawings():
+        color = list(path["color"]) if path.get("color") else None
+        width = round(path.get("width") or 0, 2)
+        for item in path["items"]:
+            if item[0] != "l":
+                continue
+            start, end = item[1], item[2]
+            lines.append({
+                "start": [round(start.x, 1), round(start.y, 1)],
+                "end": [round(end.x, 1), round(end.y, 1)],
+                "length_pts": round(math.dist(start, end), 1),
+                "color_rgb": color,
+                "stroke_width": width,
+            })
+    return lines
 
 
-def parse_pdf_to_cache(
-    pdf_path: str,
-    page_index: int | None = None,
-) -> ExtractionCache:
-    """
-    Parse all vectors and text from one PDF page into an ExtractionCache.
+def _image_coverage(page) -> float:
+    page_area = page.rect.width * page.rect.height
+    covered = sum(
+        max(0.0, (page.rect & info["bbox"]).width * (page.rect & info["bbox"]).height)
+        for info in page.get_image_info()
+    )
+    return min(1.0, covered / page_area) if page_area else 0.0
 
-    Pass an explicit page_index to parse that page. When omitted the richest
-    content page is chosen, which suits single-page callers and keeps older
-    behaviour intact.
-    """
+
+def parse_pdf_to_cache(pdf_path: str, page_index: int) -> ExtractionCache:
     doc = open_pdf_document(pdf_path)
     try:
-        resolved_index = resolve_page_index(doc, page_index)
-        page = load_page(doc, resolved_index)
-
-        full_text = page.get_text("text") or ""
-        line_segments, curves, rects, color_summary = _collect_vectors(page)
-
+        page = load_page(doc, page_index)
         return ExtractionCache(
             pdf_path=pdf_path,
-            page_index=resolved_index,
+            page_index=page_index,
             page_width_pts=round(page.rect.width, 1),
             page_height_pts=round(page.rect.height, 1),
-            title_block_text=full_text[:1200].strip(),
+            full_text=page.get_text("text") or "",
             text_spans=_collect_text_spans(page),
-            line_segments=line_segments,
-            curves=curves,
-            rects=rects,
-            color_summary=color_summary,
-            full_text=full_text,
+            line_segments=_collect_lines(page),
+            image_coverage=_image_coverage(page),
         )
     finally:
         doc.close()

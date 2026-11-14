@@ -36,6 +36,19 @@ Simple health check.
 
 Extraction is a Celery chord: `extract-document` validates the upload and fans out one `extract-page` task per page; `finalize-extraction` runs when all pages are in. Each page is published into the job record as soon as it finishes, so the frontend annotates page by page. Pages retry independently with exponential backoff (`QUEUE_ATTEMPTS`, `QUEUE_BACKOFF_DELAY_MS`); a page that still fails is recorded as skipped. Unrecoverable errors (not a PDF on disk, missing job record) fail the job immediately. Final results are also written to `EXTRACTION_OUTPUT_DIR/<jobId>.json`.
 
+## Extraction
+
+`app/extractor` reads rooms, one page at a time:
+
+1. `cache.py` parses the page: text spans, vector lines, embedded-image coverage.
+2. `classify.py` skips pages with nothing drawn, then asks the vision model whether the page is a plan and at what scale.
+3. `raster.py` renders the page and builds a wall mask from dark pixels, with text and hairline vectors erased. This works whether walls are vectors or an embedded image.
+4. `rooms.py` pairs each room name with its printed area, flood-fills the pocket around the tag, bridging door openings with the smallest closing radius whose area matches the printed figure, and squares up the outline. Corners are clustered into page-level `nodes` with grid references; each room lists the node ids it is drawn through.
+
+Each room carries `polyline`, `nodes`, `areaM2` (printed), `measuredAreaM2` (from the outline), `gridRef`, `confidence` and `notes`. A room that cannot be traced falls back to a square of the printed area with `confidence: low`.
+
+Test against the sample drawing with `uv run pytest tests/test_rooms.py`.
+
 Redis is both the Celery broker and result backend; the backend is only used to coordinate the chord and expires results after an hour.
 
 CORS allows only `FRONTEND_ORIGIN` (comma-separated for several).

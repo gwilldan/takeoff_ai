@@ -1,121 +1,49 @@
 """
-Page classification — is this page a construction plan, and how is it drawn?
+Page classification — is this page a construction plan, and at what scale?
 
-Two stages, in this order for a reason. A drawing set is mostly not plans: cover
-sheets, door schedules, specification text, revision tables. Sending every page
-to a vision model costs a call per page for an answer that page geometry already
-gives away — a page with no vectors cannot be a plan. So a free deterministic
-pre-filter runs first, and only survivors reach the model.
-
-The vision call then does classification and profiling together. Those used to
-be two separate concerns but they need the same image and the same summary, so
-merging them halves the calls per page.
+A drawing set is mostly not plans: cover sheets, schedules, specifications,
+revision tables. A free deterministic pre-filter drops pages with nothing
+drawn on them, and only survivors cost a vision call.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from app.config import settings
 from app.extractor.cache import ExtractionCache
 from app.extractor.llm import TokenTracker, chat_with_tracking, parse_json_response
 from app.extractor.render import render_page_base64
-from app.tools.query import detect_scale_from_text, get_color_summary
 
-# A plan is drawn. Fewer strokes than this and there is nothing to measure.
+log = logging.getLogger(__name__)
+
+# A plan is drawn: enough vector strokes, or an embedded image big enough to be the drawing.
 MIN_LINE_SEGMENTS = 40
+MIN_IMAGE_COVERAGE = 0.2
 
-# Vocabulary that appears on plans but rarely on schedules or specifications.
 PLAN_KEYWORDS = re.compile(
     r"\b(PLAN|FLOOR|LAYOUT|SECTION|ELEVATION|SITE|BEDROOM|KITCHEN|TOILET|"
-    r"BATHROOM|LOBBY|SITTING|LOUNGE|VERANDA|PORCH|STORE|SCALE)\b",
-    re.IGNORECASE,
+    r"BATHROOM|LOBBY|SITTING|LOUNGE|VERANDA|PORCH|STORE|SCALE)\b", re.IGNORECASE,
 )
-
-# Titles that positively identify a page as something other than a plan.
 NON_PLAN_TITLES = re.compile(
     r"\b(SCHEDULE|SPECIFICATION|BILL OF QUANTITIES|REVISION HISTORY|"
-    r"DRAWING (LIST|REGISTER)|CONTENTS|NOTES? SHEET|LEGEND SHEET)\b",
-    re.IGNORECASE,
+    r"DRAWING (LIST|REGISTER)|CONTENTS|NOTES? SHEET|LEGEND SHEET)\b", re.IGNORECASE,
 )
-
-
-def fallback_profile(
-    cache: ExtractionCache,
-    scale_str: str | None,
-    scale_ratio: int | None,
-) -> dict:
-    """
-    Drawing conventions guessed from geometry alone.
-
-    Used when the model is unreachable or returns unparseable JSON. The most
-    frequent line colour is the best available guess at the wall colour, and
-    confidence says plainly that this was not read from the drawing.
-    """
-    colors = get_color_summary(cache)
-    frequent = [c["color_rgb"] for c in colors["colors"][:3] if c.get("color_rgb")]
-
-    return {
-        "scale": scale_str or "unknown",
-        "scale_ratio": scale_ratio or 100,
-        "wall_indicators": {
-            "description": "fallback — most frequent line colour",
-            "likely_colors": frequent[:1] or [[0, 0, 0]],
-            "likely_stroke_range": [0.0, 5.0],
-        },
-        "grid_indicators": {
-            "description": "unknown",
-            "likely_colors": [],
-            "exclude_from_walls": True,
-        },
-        "dimension_style": {
-            "description": "3-5 digit millimetre values",
-            "location": "unknown",
-            "text_pattern": r"\d{3,5}",
-        },
-        "room_labels": {"description": "uppercase room names", "examples": []},
-        "opening_style": {
-            "description": "Dr-/Wn- references",
-            "door_pattern": r"Dr[-\s]?\d+",
-            "window_pattern": r"Wn[-\s]?\d+",
-        },
-        "confidence": "low",
-        "notes": [],
-    }
-
-
-def prefilter_page(cache: ExtractionCache) -> tuple[bool, str]:
-    """
-    Cheap, model-free judgement on whether a page is worth a vision call.
-
-    Returns (is_candidate, reason). The reason is carried into the result so a
-    skipped page can explain itself rather than silently vanishing.
-    """
-    if len(cache.line_segments) < MIN_LINE_SEGMENTS:
-        return False, (
-            f"only {len(cache.line_segments)} line segments — "
-            "too little geometry to be a drawing"
-        )
-
-    heading = cache.title_block_text[:400]
-    if NON_PLAN_TITLES.search(heading) and not PLAN_KEYWORDS.search(heading):
-        return False, "title reads as a schedule or specification, not a drawing"
-
-    return True, "has drawing geometry"
-
+SCALE = re.compile(r"1\s*:\s*(\d+)")
 
 CLASSIFY_SYSTEM = """You are an architectural drawing analyst.
 
-You receive one page from a construction drawing set: an image plus a compact
-summary of its vector and text content. Decide whether this page is a
-construction plan that can be measured, and if so describe how THIS drawing is
-drawn — its own conventions, not generic ones.
+You receive one page from a construction drawing set: an image plus a short
+summary of its content. Decide whether it is a construction plan that can be
+measured, and read its scale.
 
-A construction plan is a scaled orthographic drawing of a building or site:
-floor plans, site plans, setting-out plans, roof plans. These are NOT plans:
-door and window schedules, specifications, bills of quantities, revision tables,
-drawing registers, title or cover sheets, 3D views, photographs.
+A construction plan is a scaled orthographic drawing of a building or site seen
+from above: floor plans, site plans, setting-out plans, roof plans. These are
+NOT plans: sections, elevations, details, door and window schedules,
+specifications, bills of quantities, revision tables, drawing registers, title
+or cover sheets, 3D views, photographs.
 
 Return a single JSON object, no markdown:
 {
@@ -124,115 +52,70 @@ Return a single JSON object, no markdown:
   "not_plan_reason": "only when is_plan is false",
   "scale": "1:100 or unknown",
   "scale_ratio": 100,
-  "wall_indicators": {
-    "description": "how walls appear in this drawing",
-    "likely_colors": [[r, g, b]],
-    "likely_stroke_range": [min, max]
-  },
-  "grid_indicators": {
-    "description": "how setting-out grid lines appear, if any",
-    "likely_colors": [[r, g, b]],
-    "exclude_from_walls": true
-  },
-  "dimension_style": {
-    "description": "where and how dimensions are shown",
-    "location": "exterior | interior | both | unknown",
-    "text_pattern": "regex for dimension numbers, e.g. \\\\d{3,5}"
-  },
-  "room_labels": { "description": "how room names appear", "examples": ["BEDROOM"] },
-  "opening_style": {
-    "description": "how doors and windows are referenced",
-    "door_pattern": "Dr-\\\\d+",
-    "window_pattern": "Wn-\\\\d+"
-  },
   "confidence": "high | medium | low",
   "notes": ["assumptions or ambiguities"]
 }
-
-RGB values are 0.0-1.0. Use the colour summary to infer likely_colors, and keep
-grid colours out of wall colours — they are usually red and dashed.
-Sections and elevations are drawings but cannot be measured in plan: mark them
-is_plan false with plan_type set accordingly.
 """
+
+
+def detect_scale(text: str) -> tuple[str | None, int | None]:
+    match = SCALE.search(text)
+    return (f"1:{match.group(1)}", int(match.group(1))) if match else (None, None)
+
+
+def prefilter_page(cache: ExtractionCache) -> str | None:
+    """Reason to skip the page without a model call, or None when it is worth one."""
+    if len(cache.line_segments) < MIN_LINE_SEGMENTS and cache.image_coverage < MIN_IMAGE_COVERAGE:
+        return f"only {len(cache.line_segments)} line segments and no drawing image — nothing to measure"
+    heading = cache.title_block_text[:400]
+    if NON_PLAN_TITLES.search(heading) and not PLAN_KEYWORDS.search(heading):
+        return "title reads as a schedule or specification, not a drawing"
+    return None
 
 
 def classify_page(cache: ExtractionCache, tracker: TokenTracker) -> dict:
     """
-    Classify and profile one page with a single vision call.
+    Classify one page with a single vision call.
 
-    Falls back to heuristics when the model is unreachable or returns
-    unparseable JSON — a page is never dropped because of a bad response, it is
-    kept with low confidence and a note.
+    Falls back to "plan at the detected scale" when the model is unreachable or
+    returns bad JSON — a page is never dropped because of a bad response.
     """
-    is_candidate, reason = prefilter_page(cache)
+    if reason := prefilter_page(cache):
+        return {"is_plan": False, "plan_type": "other", "not_plan_reason": reason,
+                "classified_by": "prefilter", "confidence": "high", "notes": []}
 
-    if not is_candidate:
-        return {
-            "is_plan": False,
-            "plan_type": "other",
-            "not_plan_reason": reason,
-            "classified_by": "prefilter",
-            "confidence": "high",
-            "notes": [],
-        }
-
-    # Search the whole page, not just the leading extract. A view title carrying
-    # "1 : 100" is often the last thing in the text stream rather than the first,
-    # so reading only title_block_text reported "unknown" on drawings that state
-    # their scale plainly.
-    scale_str, scale_ratio = detect_scale_from_text(cache.full_text)
+    # The whole text, not the title block: "1 : 100" is often the last thing on the sheet.
+    scale_text, scale_ratio = detect_scale(cache.full_text)
     summary = cache.to_summary()
-    colors = get_color_summary(cache)
-
-    user_text = (
-        "Classify this drawing page and, if it is a measurable plan, return its "
-        "drawing profile.\n\n"
-        f"Page {cache.page_number}\n"
+    prompt = (
+        f"Classify this drawing page.\n\nPage {cache.page_number}\n"
         f"Title block sample:\n{summary['title_block_text'][:600]}\n\n"
-        f"Colour summary: {json.dumps(colors['colors'][:8])}\n"
-        f"Text spans: {summary['text_span_count']}\n"
-        f"Line segments: {summary['line_segment_count']}\n"
-        f"Rectangles: {summary['rect_count']}\n"
+        f"Text spans: {summary['text_span_count']}, line segments: {summary['line_segment_count']}, "
+        f"image coverage: {summary['image_coverage']}\n"
         f"Sample labels: {summary['sample_text_labels'][:20]}\n"
+        + (f"Scale found in the text: {scale_text}\n" if scale_text else "")
     )
-    if scale_str:
-        user_text += f"\nScale detected in the title block: {scale_str}\n"
 
     try:
         response = chat_with_tracking(
-            tracker,
-            step=f"classify_page_{cache.page_number}",
-            model=settings.llm_vision_model,
+            tracker, step=f"classify_page_{cache.page_number}", model=settings.llm_vision_model,
             messages=[
                 {"role": "system", "content": CLASSIFY_SYSTEM},
-                {
-                    "role": "user",
-                    "content": user_text,
-                    "images": [render_page_base64(cache.pdf_path, cache.page_index)],
-                },
+                {"role": "user", "content": prompt, "images": [render_page_base64(cache.pdf_path, cache.page_index)]},
             ],
         )
-        profile = parse_json_response(response.content)
-        profile["classified_by"] = "vision"
+        profile = {**parse_json_response(response.content), "classified_by": "vision"}
     except Exception as error:  # network, auth, or malformed JSON
-        profile = fallback_profile(cache, scale_str, scale_ratio)
-        profile["is_plan"] = True
-        profile["plan_type"] = "unknown"
-        profile["classified_by"] = "fallback"
-        profile.setdefault("notes", []).append(
-            f"Classification fell back to heuristics: {error}"
-        )
+        log.warning("page %d: classification fell back to heuristics: %s", cache.page_number, error)
+        profile = {"is_plan": True, "plan_type": "unknown", "classified_by": "fallback", "confidence": "low",
+                   "notes": [f"Classification fell back to heuristics: {error}"]}
 
-    if scale_str and profile.get("scale") in (None, "", "unknown"):
-        profile["scale"] = scale_str
+    if scale_text and profile.get("scale") in (None, "", "unknown"):
+        profile["scale"] = scale_text
     if scale_ratio and not profile.get("scale_ratio"):
         profile["scale_ratio"] = scale_ratio
 
-    profile.setdefault("is_plan", False)
-    profile.setdefault("plan_type", "other")
-    profile.setdefault("scale", "unknown")
-    profile.setdefault("scale_ratio", 100)
-    profile.setdefault("confidence", "low")
-    profile.setdefault("notes", [])
-
+    for key, default in (("is_plan", False), ("plan_type", "other"), ("scale", "unknown"),
+                         ("scale_ratio", 100), ("confidence", "low"), ("notes", [])):
+        profile.setdefault(key, default)
     return profile

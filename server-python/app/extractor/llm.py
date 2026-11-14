@@ -1,24 +1,21 @@
 """
 LLM wrapper with per-call token tracking.
 
-Uses the DashScope OpenAI-compatible API (Qwen models).
-Every LLM invocation goes through chat_with_tracking() so prompt/completion
-token counts are recorded and surfaced in the final extraction result.
+Uses the DashScope OpenAI-compatible API (Qwen models). Every call goes through
+`chat_with_tracking` so prompt/completion tokens surface in the result.
 """
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
 
 from openai import OpenAI
 
 from app.config import settings
 
 log = logging.getLogger(__name__)
-
 
 _client: OpenAI | None = None
 
@@ -41,154 +38,62 @@ class LLMUsage:
     total_tokens: int
 
     def to_dict(self) -> dict:
-        return {
-            "step": self.step,
-            "model": self.model,
-            "prompt_tokens": self.prompt_tokens,
-            "completion_tokens": self.completion_tokens,
-            "total_tokens": self.total_tokens,
-        }
+        return self.__dict__.copy()
 
 
 @dataclass
 class LLMResponse:
     content: str
     usage: LLMUsage
-    message: dict
-    raw: dict
 
 
 @dataclass
 class TokenTracker:
-    """Accumulates token usage across all LLM calls in one extraction run."""
+    """Accumulates token usage across the LLM calls of one page."""
 
     calls: list[LLMUsage] = field(default_factory=list)
-
-    @property
-    def prompt_tokens(self) -> int:
-        return sum(c.prompt_tokens for c in self.calls)
-
-    @property
-    def completion_tokens(self) -> int:
-        return sum(c.completion_tokens for c in self.calls)
-
-    @property
-    def total_tokens(self) -> int:
-        return sum(c.total_tokens for c in self.calls)
 
     def to_dict(self) -> dict:
         return {
             "calls": [c.to_dict() for c in self.calls],
             "totals": {
-                "prompt_tokens": self.prompt_tokens,
-                "completion_tokens": self.completion_tokens,
-                "total_tokens": self.total_tokens,
+                key: sum(getattr(c, key) for c in self.calls)
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
             },
         }
 
 
 def _normalize_messages(messages: list[dict]) -> list[dict]:
-    """
-    Convert internal message format to OpenAI chat format.
-
-    Supports legacy Ollama-style messages that attach base64 images via an
-    ``images`` key on the message dict.
-    """
-    normalized: list[dict] = []
-
+    """Attach base64 PNGs given under an `images` key as OpenAI image parts."""
+    normalized = []
     for message in messages:
-        role = message["role"]
-        content = message.get("content", "")
         images = message.get("images") or []
-
+        content = message.get("content", "")
         if images:
-            parts: list[dict] = []
-            if content:
-                parts.append({"type": "text", "text": content})
-            for image_b64 in images:
-                parts.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{image_b64}",
-                    },
-                })
-            normalized.append({"role": role, "content": parts})
-        else:
-            normalized.append({"role": role, "content": content})
-
+            content = [{"type": "text", "text": content}] if content else []
+            content += [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}} for b64 in images]
+        normalized.append({"role": message["role"], "content": content})
     return normalized
 
 
-def _extract_usage(completion: Any, step: str, model: str) -> LLMUsage:
+def chat_with_tracking(tracker: TokenTracker, *, step: str, messages: list[dict], model: str | None = None) -> LLMResponse:
+    model = model or settings.llm_model
+    completion = get_client().chat.completions.create(model=model, messages=_normalize_messages(messages))
+
     usage = getattr(completion, "usage", None)
     prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
-    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
-    total = int(getattr(usage, "total_tokens", 0) or (prompt + completion_tokens))
-    return LLMUsage(
-        step=step,
-        model=model,
-        prompt_tokens=prompt,
-        completion_tokens=completion_tokens,
-        total_tokens=total,
-    )
+    answer = int(getattr(usage, "completion_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", 0) or prompt + answer)
+    tracked = LLMUsage(step, model, prompt, answer, total)
+    tracker.calls.append(tracked)
+    log.info("[%s] model=%s prompt_tokens=%d completion_tokens=%d total=%d", step, model, prompt, answer, total)
 
-
-def chat_with_tracking(
-    tracker: TokenTracker,
-    *,
-    step: str,
-    messages: list[dict],
-    model: Optional[str] = None,
-    tools: Optional[list] = None,
-    format: Optional[str] = None,
-) -> LLMResponse:
-    """
-    Call the DashScope-compatible chat completions API and record token usage.
-    """
-    model = model or settings.llm_model
-    client = get_client()
-
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": _normalize_messages(messages),
-    }
-    if tools:
-        kwargs["tools"] = tools
-    if format == "json":
-        kwargs["response_format"] = {"type": "json_object"}
-
-    completion = client.chat.completions.create(**kwargs)
-    choice = completion.choices[0].message
-    content = choice.content or ""
-    usage = _extract_usage(completion, step, model)
-    tracker.calls.append(usage)
-
-    log.info(
-        "[%s] model=%s prompt_tokens=%d completion_tokens=%d total=%d",
-        step, model, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-    )
-
-    message = {
-        "role": choice.role,
-        "content": content,
-    }
-
-    return LLMResponse(
-        content=content,
-        usage=usage,
-        message=message,
-        raw=completion.model_dump(),
-    )
+    return LLMResponse(content=completion.choices[0].message.content or "", usage=tracked)
 
 
 def parse_json_response(content: str) -> dict:
     """Strip markdown fences and parse JSON from an LLM response."""
     text = content.strip()
     if text.startswith("```"):
-        parts = text.split("```")
-        if len(parts) >= 2:
-            text = parts[1]
-            if text.startswith("json"):
-                text = text[4:]
-    text = text.strip()
-    return json.loads(text)
+        text = text.split("```")[1].removeprefix("json")
+    return json.loads(text.strip())
