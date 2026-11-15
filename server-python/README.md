@@ -38,16 +38,15 @@ Extraction is a Celery chord: `extract-document` validates the upload and fans o
 
 ## Extraction
 
-`app/extractor` reads rooms, one page at a time:
+`app/extractor` reads rooms, doors and windows, one page at a time. The full walkthrough is in [docs/extraction-pipeline.md](../docs/extraction-pipeline.md).
 
-1. `cache.py` parses the page: text spans, vector lines, embedded-image coverage.
-2. `classify.py` skips pages with nothing drawn, then asks the vision model whether the page is a plan and at what scale.
-3. `raster.py` renders the page and builds a wall mask from dark pixels, with text and hairline vectors erased. This works whether walls are vectors or an embedded image.
-4. `rooms.py` pairs each room name with its printed area, flood-fills the pocket around the tag, bridging door openings with the smallest closing radius whose area matches the printed figure, and squares up the outline. Corners are clustered into page-level `nodes` with grid references; each room lists the node ids it is drawn through.
+1. `cache.py` parses the page: text spans (OCR via Tesseract when the page is a scan), vector lines, embedded-image coverage.
+2. `classify.py` skips pages with nothing drawn and pages that read as sections or elevations, then asks the vision model whether the page is a plan and at what scale. Only plan types are measured.
+3. `raster.py` renders the page and builds a wall mask from dark pixels, with text and (where safe) hairline vectors erased. Works whether walls are vectors, an embedded image or a scan. All geometric thresholds are in millimetres and converted through the sheet scale.
+4. `rooms.py` pairs each room name with its printed area, flood-fills the pocket around the tag, bridging door openings with the smallest closing radius whose area matches the printed figure, and squares up the outline. Corners are clustered into page-level `nodes` with grid references.
+5. `openings.py` anchors each door/window tag on the nearest room wall and measures the opening from the gap in the wall mask.
 
-Each room carries `polyline`, `nodes`, `areaM2` (printed), `measuredAreaM2` (from the outline), `gridRef`, `confidence` and `notes`. A room that cannot be traced falls back to a square of the printed area with `confidence: low`.
-
-Test against the sample drawing with `uv run pytest tests/test_rooms.py`.
+Test against the sample drawing with `uv run pytest tests/test_rooms.py`. The OCR test needs Tesseract, which the Docker image installs.
 
 Redis is both the Celery broker and result backend; the backend is only used to coordinate the chord and expires results after an hour.
 

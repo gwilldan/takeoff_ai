@@ -28,22 +28,29 @@ LAYER = "rooms"
 
 MM_PER_PT = 25.4 / 72
 
+# Names accepted without a printed area beside them. With an area, any label counts.
 ROOM_NAME = re.compile(
-    r"^(BEDROOM|SITTING ROOM|LOUNGE|LIVING ROOM|DINING|DINING ROOM|KITCHEN|TOILET|"
-    r"BATHROOM|WC|LOBBY|CORRIDOR|PASSAGE|PORCH|ENTRANCE PORCH|STORE|STORES|"
-    r"VER\.?|VERANDA|VERANDAH|BALCONY|GARAGE|UTILITY|PANTRY|STUDY|OFFICE)$",
+    r"^(?:MASTER |GUEST |MAIN |ENTRANCE |FAMILY |VISITORS?' ?)?"
+    r"(BEDROOM|BED|SITTING ROOM|LOUNGE|LIVING ROOM|LIVING|PARLOUR|DINING|DINING ROOM|KITCHEN|"
+    r"KITCHENETTE|TOILET|BATHROOM|BATH|WC|W\.C\.?|ENSUITE|EN-SUITE|SHOWER|LAUNDRY|LOBBY|HALL|"
+    r"HALLWAY|CORRIDOR|PASSAGE|PORCH|VER\.?|VERANDA|VERANDAH|BALCONY|TERRACE|PATIO|GARAGE|"
+    r"CARPORT|STORE|STORES|STORAGE|UTILITY|PANTRY|STUDY|OFFICE|RECEPTION|WAITING|WARD|"
+    r"CLASSROOM|LABORATORY|LAB|LIBRARY|SHOP|WORKSHOP|PLANT ROOM|SERVER ROOM|STAIR|STAIRS|"
+    r"STAIRCASE|LIFT|CONFERENCE|MEETING ROOM|BOARDROOM|CHAPEL|MOSQUE|GYM|CLINIC|CONSULTING)$",
     re.IGNORECASE,
 )
-ROOM_NAME_SHAPE = re.compile(r"^[A-Z][A-Z. ]{1,28}$")
-AREA_LABEL = re.compile(r"^(\d+(?:\.\d+)?)\s*(?:m²|m2|sq\.?\s*m)$", re.IGNORECASE)
+ROOM_NAME_SHAPE = re.compile(r"^[A-Z][A-Z0-9.'/ -]{1,30}$")
+AREA_LABEL = re.compile(r"^(\d+(?:[.,]\d+)?)\s*(?:m²|m2|sq\.?\s*m|sqm)\.?$", re.IGNORECASE)
 
 # A name and its area are stacked a line apart; this stays well inside the
 # spacing between rooms so a tag cannot be claimed by a neighbour.
 TAG_PAIR_RADIUS_PT = 30.0
 
-# Closing radii tried in order; the first whose pocket matches the printed area wins.
-CLOSING_RADII_PT = (0.0, 4.0, 8.0, 12.0, 16.0)
-RADIUS_WITHOUT_AREA_PT = 8.0
+# Closing radii tried in order, in real millimetres; a radius bridges a gap up
+# to twice its size, so 600 mm closes a 1.2 m double door. The first radius
+# whose pocket matches the printed area wins.
+CLOSING_RADII_MM = (0.0, 150.0, 300.0, 450.0, 600.0)
+RADIUS_WITHOUT_AREA_MM = 300.0
 
 # Accept a pocket whose area is within this share of the printed figure, or
 # within the half-unit the printed figure was rounded by, whichever is looser.
@@ -87,7 +94,7 @@ class Room:
 
 def pair_room_tags(text_spans: list[dict]) -> list[RoomTag]:
     """Match each printed area to its name, nearest first, each span used once."""
-    areas = [(s, float(m.group(1))) for s in text_spans if (m := AREA_LABEL.match(s["text"]))]
+    areas = [(s, float(m.group(1).replace(",", "."))) for s in text_spans if (m := AREA_LABEL.match(s["text"]))]
     names = [s for s in text_spans if ROOM_NAME_SHAPE.match(s["text"]) and not AREA_LABEL.match(s["text"])]
 
     candidates = sorted(
@@ -117,25 +124,25 @@ def _m2(area_pts2: float, scale_ratio: float) -> float:
 
 def _trace(tag: RoomTag, raster: PageRaster, scale_ratio: float) -> tuple[list[list[float]], float] | None:
     """Best outline for one tag as (polyline, area error), or None."""
-    radii = CLOSING_RADII_PT if tag.area_m2 else (RADIUS_WITHOUT_AREA_PT,)
+    radii = CLOSING_RADII_MM if tag.area_m2 else (RADIUS_WITHOUT_AREA_MM,)
     best: tuple[float, list[list[float]]] | None = None
 
-    for radius in radii:
-        region = raster.region_around((tag.x, tag.y), radius)
-        if region is None:
+    for radius_mm in radii:
+        region = raster.region_around((tag.x, tag.y), raster.mm(radius_mm))
+        if region is None or _m2(raster.area_pts2(region), scale_ratio) > MAX_ROOM_M2:
+            continue  # walled in, or leaked outside the building
+        polygon = raster.polygon(region)
+        if len(polygon) < 3:
             continue
-        area = _m2(raster.area_pts2(region), scale_ratio)
-        if area > MAX_ROOM_M2:
-            continue  # leaked outside the building
+        # Judge the outline that will be reported, not the raw fill.
+        area = _m2(polygon_area_pts2(polygon), scale_ratio)
         error = abs(area - tag.area_m2) / tag.area_m2 if tag.area_m2 else 0.0
         if best is None or error < best[0]:
-            best = (error, raster.polygon(region))
+            best = (error, polygon)
         if error <= GOOD_ENOUGH:
             break
 
-    if best is None or len(best[1]) < 3:
-        return None
-    if tag.area_m2 and best[0] > max(AREA_TOLERANCE, AREA_ROUNDING_M2 / tag.area_m2):
+    if best is None or (tag.area_m2 and best[0] > max(AREA_TOLERANCE, AREA_ROUNDING_M2 / tag.area_m2)):
         return None
     return best[1], best[0]
 
@@ -174,7 +181,7 @@ def detect_rooms(cache, raster: PageRaster, grid: DrawingGrid, scale_ratio: floa
 
         if traced:
             polyline, error = traced
-            confidence = "high" if error <= GOOD_ENOUGH or tag.area_m2 is None else "medium"
+            confidence = "high" if tag.area_m2 and error <= GOOD_ENOUGH else "medium"
             notes = [f"Outline traced from the drawing; area within {error * 100:.0f}% of the printed {tag.area_m2} m²"] if tag.area_m2 else ["Outline traced from the drawing; no printed area to check against"]
         else:
             polyline = _fallback_square(tag, scale_ratio)

@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, type PointerEvent } from 'react';
 import { hitTestShape, polygonArea, polylineLength } from '../../lib/annotations/geometry';
 import { formatArea, formatLength } from '../../lib/annotations/measure';
+import { edgeAt, snapPoint, vertexAt } from '../../lib/annotations/snapping';
 import { useAnnotations } from '../../lib/annotations/store';
 import {
   HIT_TOLERANCE_PX,
+  SNAP_TOLERANCE_PX,
   type Point,
   type Shape,
   type ShapeKind,
@@ -19,6 +21,15 @@ const CLOSE_TOLERANCE_PX = 8;
 
 /** Consecutive vertices nearer than this (in PDF points) are treated as one. */
 const DEDUPE_TOLERANCE_PTS = 0.5;
+
+/**
+ * An edit in progress on the selected shape. A vertex drag moves one point and
+ * snaps it; a shape drag translates every point. Preview points live here and
+ * only reach the store on pointer up, so a drag is one undoable change.
+ */
+type Edit =
+  | { mode: 'vertex'; shape: Shape; index: number; points: Point[]; snapped: { x: boolean; y: boolean } }
+  | { mode: 'move'; shape: Shape; origin: Point; points: Point[] };
 
 export type AnnotationOverlayProps = {
   pageNumber: number;
@@ -54,12 +65,15 @@ export function AnnotationOverlay({
   const { state, dispatch } = useAnnotations();
   const [draft, setDraft] = useState<Point[]>([]);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [edit, setEdit] = useState<Edit | null>(null);
   const spaceHeldRef = useSpaceHeld();
+  const pageGuides = state.guides?.[pageNumber];
 
   // A draft belongs to one tool on one page. Changing either abandons it.
   useEffect(() => {
     setDraft([]);
     setCursor(null);
+    setEdit(null);
   }, [tool, pageNumber]);
 
   const visibleShapes = useMemo(() => {
@@ -164,12 +178,30 @@ export function AnnotationOverlay({
       const point = toPointSpace(event);
 
       if (tool === 'select') {
+        const tolerance = HIT_TOLERANCE_PX / scale;
+        const selected = visibleShapes.find((entry) => entry.shape.id === state.selectedShapeId)?.shape;
+
+        // A handle on the selected shape takes priority over everything under it.
+        if (selected) {
+          const index = vertexAt(selected, point, tolerance * 1.6);
+          if (index >= 0) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setEdit({ mode: 'vertex', shape: selected, index, points: selected.points, snapped: { x: false, y: false } });
+            return;
+          }
+        }
+
         // Most recently drawn shape wins when shapes overlap.
         const hit = [...visibleShapes]
           .reverse()
-          .find((entry) => hitTestShape(entry.shape, point, HIT_TOLERANCE_PX / scale));
+          .find((entry) => hitTestShape(entry.shape, point, tolerance));
 
         dispatch({ type: 'selectShape', shapeId: hit?.shape.id ?? null });
+
+        if (hit) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setEdit({ mode: 'move', shape: hit.shape, origin: point, points: hit.shape.points });
+        }
         return;
       }
 
@@ -218,10 +250,106 @@ export function AnnotationOverlay({
       onCalibrationLine,
       scale,
       spaceHeldRef,
+      state.selectedShapeId,
       tool,
       toPointSpace,
       visibleShapes
     ]
+  );
+
+  const handlePointerMove = useCallback(
+    (event: PointerEvent<SVGSVGElement>) => {
+      const point = toPointSpace(event);
+
+      if (!edit) {
+        if (isDrawingTool(tool)) {
+          setCursor(point);
+        }
+        return;
+      }
+
+      if (edit.mode === 'move') {
+        const dx = point.x - edit.origin.x;
+        const dy = point.y - edit.origin.y;
+        setEdit({ ...edit, points: edit.shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) });
+        return;
+      }
+
+      // Alt disables snapping for the odd case where the drawing is wrong.
+      const snap = event.altKey
+        ? { point, snappedX: false, snappedY: false }
+        : snapPoint(point, SNAP_TOLERANCE_PX / scale, {
+            guides: pageGuides,
+            shapes: visibleShapes.map((entry) => entry.shape),
+            editing: { shape: edit.shape, vertexIndex: edit.index }
+          });
+
+      const points = edit.shape.points.map((p, i) => (i === edit.index ? snap.point : p));
+      setEdit({ ...edit, points, snapped: { x: snap.snappedX, y: snap.snappedY } });
+    },
+    [edit, pageGuides, scale, tool, toPointSpace, visibleShapes]
+  );
+
+  const handlePointerUp = useCallback(
+    (event: PointerEvent<SVGSVGElement>) => {
+      if (!edit) {
+        return;
+      }
+
+      event.currentTarget.releasePointerCapture(event.pointerId);
+
+      const moved = edit.points.some(
+        (p, i) => p.x !== edit.shape.points[i]!.x || p.y !== edit.shape.points[i]!.y
+      );
+      if (moved) {
+        dispatch({ type: 'updateShapePoints', shapeId: edit.shape.id, points: edit.points });
+      }
+
+      setEdit(null);
+    },
+    [dispatch, edit]
+  );
+
+  // Double-click on the selected shape: a vertex is removed, an edge gains one.
+  const handleDoubleClick = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (draft.length > 0) {
+        finishDraft();
+        return;
+      }
+
+      if (tool !== 'select') {
+        return;
+      }
+
+      const selected = visibleShapes.find((entry) => entry.shape.id === state.selectedShapeId)?.shape;
+      if (!selected) {
+        return;
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const point = { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale };
+      const tolerance = HIT_TOLERANCE_PX / scale;
+
+      const vertex = vertexAt(selected, point, tolerance * 1.6);
+      const minimum = selected.kind === 'area' ? 3 : 2;
+      if (vertex >= 0 && selected.points.length > minimum) {
+        dispatch({
+          type: 'updateShapePoints',
+          shapeId: selected.id,
+          points: selected.points.filter((_, i) => i !== vertex)
+        });
+        return;
+      }
+
+      const edge = edgeAt(selected, point, tolerance);
+      if (edge >= 0) {
+        const points = [...selected.points];
+        points.splice(edge + 1, 0, point);
+        dispatch({ type: 'updateShapePoints', shapeId: selected.id, points });
+      }
+    },
+    [dispatch, draft.length, finishDraft, scale, state.selectedShapeId, tool, visibleShapes]
   );
 
   const draftPreview = useMemo(() => {
@@ -247,14 +375,16 @@ export function AnnotationOverlay({
       height={pageSize.height * scale}
       viewBox={`0 0 ${pageSize.width} ${pageSize.height}`}
       onPointerDown={interactive ? handlePointerDown : undefined}
-      onPointerMove={isDrawingTool(tool) ? (event) => setCursor(toPointSpace(event)) : undefined}
+      onPointerMove={interactive ? handlePointerMove : undefined}
+      onPointerUp={interactive ? handlePointerUp : undefined}
       onPointerLeave={() => setCursor(null)}
-      onDoubleClick={draft.length > 0 ? finishDraft : undefined}
+      onDoubleClick={interactive ? handleDoubleClick : undefined}
       className={`absolute left-0 top-0 ${interactive ? cursorClass : 'pointer-events-none'}`}
       role="presentation"
     >
-      {visibleShapes.map(({ shape, color }) => {
-        const selected = shape.id === state.selectedShapeId;
+      {visibleShapes.map(({ shape: stored, color }) => {
+        const selected = stored.id === state.selectedShapeId;
+        const shape = edit && edit.shape.id === stored.id ? { ...stored, points: edit.points } : stored;
         const pointsAttribute = shape.points.map((point) => `${point.x},${point.y}`).join(' ');
 
         return (
@@ -281,19 +411,36 @@ export function AnnotationOverlay({
             )}
 
             {selected
-              ? shape.points.map((point, index) => (
-                  <circle
-                    key={index}
-                    cx={point.x}
-                    cy={point.y}
-                    r={3.5 / scale}
-                    fill="#ffffff"
-                    stroke={color}
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ))
+              ? shape.points.map((point, index) => {
+                  const dragging = edit?.mode === 'vertex' && edit.index === index;
+                  return (
+                    <circle
+                      key={index}
+                      cx={point.x}
+                      cy={point.y}
+                      r={(dragging ? 5 : 3.5) / scale}
+                      fill={dragging && (edit.snapped.x || edit.snapped.y) ? color : '#ffffff'}
+                      stroke={color}
+                      strokeWidth={1.5}
+                      vectorEffect="non-scaling-stroke"
+                      className="cursor-move"
+                    />
+                  );
+                })
               : null}
+
+            {/* Snap guides: a full-height or full-width hairline on the axis the
+                dragged vertex locked to, so it is obvious what it aligned with. */}
+            {selected && edit?.mode === 'vertex' && edit.shape.id === stored.id ? (
+              <g stroke={color} strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" opacity={0.7}>
+                {edit.snapped.x ? (
+                  <line x1={edit.points[edit.index]!.x} y1={0} x2={edit.points[edit.index]!.x} y2={pageSize.height} />
+                ) : null}
+                {edit.snapped.y ? (
+                  <line x1={0} y1={edit.points[edit.index]!.y} x2={pageSize.width} y2={edit.points[edit.index]!.y} />
+                ) : null}
+              </g>
+            ) : null}
 
             {/* A named element carries its label always — a room outline nobody
                 can identify is not an annotation. References and grid marks show

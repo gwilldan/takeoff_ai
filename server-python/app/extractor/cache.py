@@ -8,10 +8,19 @@ no transform.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 
+from app.config import settings
 from app.extractor.pdf_utils import load_page, open_pdf_document
+
+log = logging.getLogger(__name__)
+
+# A page with fewer native text spans than this, and a drawing-sized image,
+# is a scan: its text has to be read with OCR.
+MIN_NATIVE_SPANS = 20
+MIN_SCAN_IMAGE_COVERAGE = 0.2
 
 
 @dataclass
@@ -24,6 +33,7 @@ class ExtractionCache:
     text_spans: list[dict] = field(default_factory=list)
     line_segments: list[dict] = field(default_factory=list)
     image_coverage: float = 0.0  # share of the page covered by embedded images
+    text_source: str = "native"  # or "ocr" when the page had no usable text layer
 
     @property
     def page_number(self) -> int:
@@ -53,9 +63,9 @@ def get_page_count(pdf_path: str) -> int:
         doc.close()
 
 
-def _collect_text_spans(page) -> list[dict]:
+def _collect_text_spans(page, textpage=None) -> list[dict]:
     spans = []
-    for block in page.get_text("dict")["blocks"]:
+    for block in page.get_text("dict", textpage=textpage)["blocks"]:
         for line in block.get("lines", []):
             for span in line["spans"]:
                 text = span["text"].strip()
@@ -99,19 +109,35 @@ def _image_coverage(page) -> float:
     return min(1.0, covered / page_area) if page_area else 0.0
 
 
+def _ocr_textpage(page):
+    """Tesseract text layer for a scanned page, or None when OCR is unavailable."""
+    try:
+        return page.get_textpage_ocr(flags=0, language=settings.ocr_language, dpi=settings.ocr_dpi, full=True)
+    except Exception as exc:  # no tesseract binary / tessdata in this environment
+        log.warning("OCR unavailable, scanned page read without text: %s", exc)
+        return None
+
+
 def parse_pdf_to_cache(pdf_path: str, page_index: int) -> ExtractionCache:
     doc = open_pdf_document(pdf_path)
     try:
         page = load_page(doc, page_index)
+        coverage = _image_coverage(page)
+        spans, full_text, source = _collect_text_spans(page), page.get_text("text") or "", "native"
+
+        if len(spans) < MIN_NATIVE_SPANS and coverage >= MIN_SCAN_IMAGE_COVERAGE and (textpage := _ocr_textpage(page)):
+            spans, full_text, source = _collect_text_spans(page, textpage), page.get_text("text", textpage=textpage), "ocr"
+
         return ExtractionCache(
             pdf_path=pdf_path,
             page_index=page_index,
             page_width_pts=round(page.rect.width, 1),
             page_height_pts=round(page.rect.height, 1),
-            full_text=page.get_text("text") or "",
-            text_spans=_collect_text_spans(page),
+            full_text=full_text,
+            text_spans=spans,
             line_segments=_collect_lines(page),
-            image_coverage=_image_coverage(page),
+            image_coverage=coverage,
+            text_source=source,
         )
     finally:
         doc.close()

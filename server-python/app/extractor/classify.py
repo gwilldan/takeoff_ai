@@ -33,6 +33,16 @@ NON_PLAN_TITLES = re.compile(
 )
 SCALE = re.compile(r"1\s*:\s*(\d+)")
 
+# Only these are measurable in plan. Anything else the model returns is skipped
+# even when it also says is_plan — a section is a drawing, not a plan.
+PLAN_TYPES = {"ground_floor_plan", "upper_floor_plan", "floor_plan", "site_plan", "roof_plan", "setting_out_plan", "unknown"}
+
+# Sections and elevations carry a column of datum levels (AGL, DPC, FFL …);
+# plans do not. Used by the prefilter and as the fallback's judgement.
+SECTION_TITLE = re.compile(r"\b(SECTION|ELEVATION|DETAIL)S?\b", re.IGNORECASE)
+LEVEL_MARK = re.compile(r"\b(AGL|DPC|FFL|SSL|SFL|RL|NGL)\b")
+MIN_LEVEL_MARKS = 3
+
 CLASSIFY_SYSTEM = """You are an architectural drawing analyst.
 
 You receive one page from a construction drawing set: an image plus a short
@@ -70,7 +80,14 @@ def prefilter_page(cache: ExtractionCache) -> str | None:
     heading = cache.title_block_text[:400]
     if NON_PLAN_TITLES.search(heading) and not PLAN_KEYWORDS.search(heading):
         return "title reads as a schedule or specification, not a drawing"
+    if looks_like_section(cache):
+        return "reads as a section or elevation, which cannot be measured in plan"
     return None
+
+
+def looks_like_section(cache: ExtractionCache) -> bool:
+    titled = SECTION_TITLE.search(cache.title_block_text) and not re.search(r"\bPLAN\b", cache.title_block_text, re.I)
+    return bool(titled) or len(LEVEL_MARK.findall(cache.full_text)) >= MIN_LEVEL_MARKS
 
 
 def classify_page(cache: ExtractionCache, tracker: TokenTracker) -> dict:
@@ -118,4 +135,8 @@ def classify_page(cache: ExtractionCache, tracker: TokenTracker) -> dict:
     for key, default in (("is_plan", False), ("plan_type", "other"), ("scale", "unknown"),
                          ("scale_ratio", 100), ("confidence", "low"), ("notes", [])):
         profile.setdefault(key, default)
+
+    if profile["is_plan"] and profile["plan_type"] not in PLAN_TYPES:
+        profile["is_plan"] = False
+        profile["not_plan_reason"] = f"{profile['plan_type'].replace('_', ' ')} cannot be measured in plan"
     return profile

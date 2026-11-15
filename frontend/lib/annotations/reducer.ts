@@ -1,4 +1,4 @@
-import type { AnnotationState, Calibration, Layer, Shape, ShapeKind } from './types';
+import type { AnnotationState, Calibration, Layer, PageGuides, Point, Shape, ShapeKind } from './types';
 import { LAYER_PALETTE } from './types';
 
 export type AnnotationAction =
@@ -11,12 +11,14 @@ export type AnnotationAction =
   | { type: 'setActiveLayer'; layerId: string }
   | { type: 'addShape'; shape: Shape; fallbackLayerId: string }
   | { type: 'deleteShape'; shapeId: string }
+  | { type: 'updateShapePoints'; shapeId: string; points: Point[] }
   | { type: 'selectShape'; shapeId: string | null }
   | { type: 'setCalibration'; calibration: Calibration | null }
   | {
       type: 'importExtraction';
       layers: Layer[];
       calibration?: Calibration | null;
+      guides?: Record<number, PageGuides>;
     }
   | { type: 'reset' };
 
@@ -124,6 +126,17 @@ export function annotationReducer(
         selectedShapeId: state.selectedShapeId === action.shapeId ? null : state.selectedShapeId
       };
 
+    case 'updateShapePoints':
+      return {
+        ...state,
+        layers: state.layers.map((layer) => ({
+          ...layer,
+          shapes: layer.shapes.map((shape) =>
+            shape.id === action.shapeId ? { ...shape, points: action.points } : shape
+          )
+        }))
+      };
+
     case 'selectShape':
       return { ...state, selectedShapeId: action.shapeId };
 
@@ -155,7 +168,8 @@ export function annotationReducer(
         calibration:
           action.calibration !== undefined
             ? (action.calibration ?? state.calibration)
-            : state.calibration
+            : state.calibration,
+        guides: action.guides ?? state.guides
       };
     }
 

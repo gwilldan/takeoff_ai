@@ -1,6 +1,9 @@
 FROM python:3.12-slim AS base
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 PATH="/app/.venv/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 PATH="/app/.venv/bin:$PATH" \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+# Tesseract gives scanned drawings a text layer (room names, tags, scale).
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr && rm -rf /var/lib/apt/lists/*
 COPY --from=astral/uv:0.13 /uv /usr/local/bin/uv
 
 FROM base AS deps

@@ -51,6 +51,16 @@ class ExtractionResult(WireModel):
         self.document.pages_processed = len(self.pages)
         self.document.plan_page_count = sum(1 for p in self.pages if p.get("isPlan"))
         self.totals = page_totals(self.pages)
+        self.token_usage = token_usage_totals(self.pages)
+
+
+def token_usage_totals(pages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Every LLM call made for these pages, with summed totals; updated as pages land."""
+    calls = [c for p in pages for c in (p.get("tokenUsage") or {}).get("calls", [])]
+    return {
+        "calls": calls,
+        "totals": {k: sum(c.get(k, 0) for c in calls) for k in ("prompt_tokens", "completion_tokens", "total_tokens")},
+    }
 
 
 def page_totals(pages: list[dict[str, Any]]) -> dict[str, int]:

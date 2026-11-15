@@ -6,6 +6,7 @@ import { useAnnotations } from '../../lib/annotations/store';
 import { scaleLabel } from '../../lib/annotations/measure';
 import {
   calibrationFromExtraction,
+  guidesFromExtraction,
   layersFromExtraction,
   type ExtractionDocument
 } from '../../lib/annotations/extraction-import';
@@ -23,15 +24,10 @@ import { useViewerState, clampZoom } from './use-viewer-state';
 import { ViewerToolbar } from './viewer-toolbar';
 
 /**
- * Component classes taken from an extraction today.
- *
- * Rooms only: they are anchored on the drawing's printed area tags, which every
- * BIM-produced plan carries, so they are right across drawing styles. Wall
- * reconstruction still depends on a convention not all drawings follow, and
- * annotating a drawing with walls that are not there is worse than annotating
- * nothing.
+ * Component classes taken from an extraction today: rooms traced from the
+ * walls, and the door and window openings anchored on their reference tags.
  */
-const IMPORTED_LAYERS = ['rooms'];
+const IMPORTED_LAYERS = ['rooms', 'doors', 'windows'];
 
 export function Workspace() {
   const [file, setFile] = useState<File | null>(null);
@@ -83,6 +79,7 @@ export function Workspace() {
       dispatch({
         type: 'importExtraction',
         layers: layersFromExtraction(result, { only: IMPORTED_LAYERS }),
+        guides: guidesFromExtraction(result),
         // Adopt the drawing's own scale so totals read in millimetres straight
         // away, unless the user has already calibrated by hand.
         calibration: state.calibration ?? calibrationFromExtraction(result)

@@ -51,12 +51,25 @@ export type Calibration = {
   pointsPerMillimetre: number;
 };
 
+/**
+ * Snap targets the extraction found on one page: the drawing's grid axes and
+ * the corner nodes of extracted components. Editing a shape snaps to these,
+ * which is what lets a hand correction land exactly where the drawing says.
+ */
+export type PageGuides = {
+  xs: number[];
+  ys: number[];
+  points: Point[];
+};
+
 export type AnnotationState = {
   documentKey: string | null;
   layers: Layer[];
   activeLayerId: string | null;
   selectedShapeId: string | null;
   calibration: Calibration | null;
+  /** Keyed by page number. Absent before any extraction has been imported. */
+  guides?: Record<number, PageGuides>;
 };
 
 export type ToolId = 'select' | 'line' | 'area' | 'pan' | 'calibrate';
@@ -79,3 +92,6 @@ export const LAYER_PALETTE = [
  * area stays the same size on screen at every zoom level.
  */
 export const HIT_TOLERANCE_PX = 5;
+
+/** How near a dragged vertex must come to a snap target, in screen pixels. */
+export const SNAP_TOLERANCE_PX = 8;

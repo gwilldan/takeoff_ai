@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     llm_model: str = "qwen3.7-plus"
     llm_vision_model: str | None = None
 
-    extraction_cache_dir: str = "/tmp/takeoff-extraction-cache"
+    ocr_language: str = "eng"
+    ocr_dpi: int = 300
+
     extraction_output_dir: str = "/data/output"
 
     @property

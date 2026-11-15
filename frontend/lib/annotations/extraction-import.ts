@@ -1,4 +1,4 @@
-import type { Layer, Point, Shape, ShapeKind } from './types';
+import type { Layer, PageGuides, Point, Shape, ShapeKind } from './types';
 
 /**
  * Maps a worker extraction result onto annotation layers.
@@ -226,4 +226,27 @@ export function calibrationFromExtraction(
   }
 
   return null;
+}
+
+/** Snap targets per page: grid axes and extracted corner nodes. */
+export function guidesFromExtraction(
+  result: ExtractionDocument | null | undefined
+): Record<number, PageGuides> {
+  const guides: Record<number, PageGuides> = {};
+
+  for (const page of result?.pages ?? []) {
+    if (!page.isPlan) {
+      continue;
+    }
+
+    guides[page.pageNumber] = {
+      xs: (page.grid?.columns ?? []).map((axis) => axis.x),
+      ys: (page.grid?.rows ?? []).map((axis) => axis.y),
+      points: (page.nodes ?? [])
+        .filter((node) => node.point.length >= 2)
+        .map((node) => ({ x: node.point[0]!, y: node.point[1]! }))
+    };
+  }
+
+  return guides;
 }

@@ -87,9 +87,8 @@ def extract_document(job_id: str) -> None:
 @celery_app.task(name="extract-page", bind=True, max_retries=MAX_RETRIES)
 def extract_page(self, job_id: str, pdf_path: str, page_index: int) -> dict[str, Any]:
     """Annotate one page and publish it into the job record straight away."""
-    tracker = TokenTracker()
     try:
-        page = process_page(pdf_path, page_index, tracker)
+        page = process_page(pdf_path, page_index, TokenTracker())
     except Exception as exc:
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=RETRY_BACKOFF_S * 2**self.request.retries)
@@ -107,29 +106,22 @@ def extract_page(self, job_id: str, pdf_path: str, page_index: int) -> dict[str,
 
     update_job(job_id, publish)
     log.info("[%s] page %d: %s", job_id, page["pageNumber"], "plan" if page.get("isPlan") else "skipped")
-    return {"page": page, "tokenUsage": tracker.to_dict()}
+    return page
 
 
 @celery_app.task(name="finalize-extraction", ignore_result=True)
-def finalize_extraction(page_results: list[dict[str, Any]], job_id: str) -> None:
-    """Close the result once every page is in: totals, token usage, output file, webhook."""
+def finalize_extraction(pages: list[dict[str, Any]], job_id: str) -> None:
+    """Close the result once every page is in: accepted flag, output file, webhook."""
     try:
-        calls = [c for r in page_results for c in r["tokenUsage"]["calls"]]
-        token_usage = {
-            "calls": calls,
-            "totals": {k: sum(c[k] for c in calls) for k in ("prompt_tokens", "completion_tokens", "total_tokens")},
-        }
-
         def complete(job: JobRecord) -> None:
             result = job.result
             if result is None:
                 return
-            for r in page_results:  # defensive: a page is normally already published
-                if r["page"]["pageNumber"] not in {p["pageNumber"] for p in result.pages}:
-                    result.add_page(r["page"])
+            for page in pages:  # defensive: a page is normally already published
+                if page["pageNumber"] not in {p["pageNumber"] for p in result.pages}:
+                    result.add_page(page)
             result.partial = False
             result.accepted = result.document.plan_page_count > 0
-            result.token_usage = token_usage
             result.extracted_at = utcnow()
             if not result.accepted:
                 result.rejection = {"reason": "not_a_construction_plan", "message": NOT_A_PLAN_MESSAGE}

@@ -19,7 +19,9 @@ def _pdf_bytes(pages: int = 2) -> bytes:
 
 
 def _plan_page(index: int) -> dict:
-    return {"pageNumber": index + 1, "isPlan": True, "counts": {"walls": 2}, "components": []}
+    usage = {"calls": [{"step": f"classify_page_{index + 1}", "model": "m", "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}],
+             "totals": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+    return {"pageNumber": index + 1, "isPlan": True, "counts": {"walls": 2}, "components": [], "tokenUsage": usage}
 
 
 @pytest.fixture
@@ -96,6 +98,7 @@ def test_pages_stream_into_the_job_then_finalize(client, monkeypatch):
     second = tasks.extract_page.run(job_id, body["documentPath"], 1)
     job = client.get(body["statusUrl"]).json()
     assert job["result"]["document"]["pagesProcessed"] == 1 and job["result"]["totals"] == {"walls": 2}
+    assert job["result"]["tokenUsage"]["totals"]["total_tokens"] == 15  # live, before finalize
 
     first = tasks.extract_page.run(job_id, body["documentPath"], 0)
     job = client.get(body["statusUrl"]).json()
@@ -108,7 +111,7 @@ def test_pages_stream_into_the_job_then_finalize(client, monkeypatch):
     result = job["result"]
     assert result["partial"] is False and result["accepted"] is True
     assert result["totals"] == {"walls": 4}
-    assert result["tokenUsage"]["totals"]["total_tokens"] == 0
+    assert result["tokenUsage"]["totals"]["total_tokens"] == 30 and len(result["tokenUsage"]["calls"]) == 2
 
     assert notified[0].id == job_id
     saved = json.loads((Path(settings.extraction_output_dir) / f"{job_id}.json").read_text())
@@ -122,7 +125,7 @@ def test_document_without_plans_is_rejected(client, monkeypatch):
     tasks.extract_document.run(job_id=body["jobId"])
 
     skipped = {"pageNumber": 1, "isPlan": False, "skippedReason": "schedule", "components": []}
-    tasks.finalize_extraction.run([{"page": skipped, "tokenUsage": {"calls": []}}], body["jobId"])
+    tasks.finalize_extraction.run([skipped], body["jobId"])
 
     result = get_job(body["jobId"]).result
     assert result.accepted is False and result.rejection["reason"] == "not_a_construction_plan"
@@ -140,8 +143,8 @@ def test_failed_page_is_recorded_as_skipped_after_retries(client, monkeypatch):
     monkeypatch.setattr(tasks.extract_page, "max_retries", 0)
 
     out = tasks.extract_page.run(body["jobId"], body["documentPath"], 0)
-    assert out["page"]["isPlan"] is False and "boom" in out["page"]["skippedReason"]
-    assert get_job(body["jobId"]).result.pages[0]["skippedReason"] == out["page"]["skippedReason"]
+    assert out["isPlan"] is False and "boom" in out["skippedReason"]
+    assert get_job(body["jobId"]).result.pages[0]["skippedReason"] == out["skippedReason"]
 
 
 def test_missing_document_fails_the_job_without_retry(client):

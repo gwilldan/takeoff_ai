@@ -24,14 +24,22 @@ import numpy as np
 
 from app.extractor.render import render_page_array
 
+MM_PER_PT = 25.4 / 72
+
+# Render resolution, capped so an A0 sheet does not become a 70-megapixel mask.
 PX_PER_PT = 3.0
+MAX_PIXELS = 30_000_000
 
 # A pixel is a barrier when every channel is below this: black and dark-red
 # walls count, bright red dimension lines and grey ghosted layers do not.
 DARK_MAX_CHANNEL = 150
 
-# Vector strokes at or below this width are never walls; they are erased.
+# Vector strokes at or below this width are dimension lines, grid lines and
+# leaders — but only on sheets that also draw something heavier. A CAD export
+# drawn entirely in hairlines keeps them, because then the walls are hairlines
+# too, and the colour threshold has to do the work alone.
 HAIRLINE_PT = 0.5
+HEAVY_STROKE_RATIO = 1.5
 
 # Padding added around each text span when erasing it, in points.
 TEXT_PAD_PT = 1.0
@@ -39,17 +47,21 @@ TEXT_PAD_PT = 1.0
 # How far from the tag to look for free space when the tag sits on a pixel.
 SEED_SEARCH_PT = 6.0
 
+# Real-world sizes, converted through the drawing scale so a 1:50 and a 1:200
+# sheet get the same treatment.
+#
 # Opening/closing kernel applied to a found room: removes door-leaf slivers and
-# pokes into doorways, narrower than any real room.
-CLEANUP_PT = 8.0
+# pokes into doorways. Must stay narrower than any real room or corridor.
+CLEANUP_MM = 300.0
+# Edges shorter than these are traced noise. A diagonal has to be longer than a
+# door swing's radius before it counts as a real splayed wall.
+MIN_EDGE_MM = 100.0
+MIN_DIAGONAL_EDGE_MM = 1000.0
 
-# Contour simplification tolerance and the angle within which an edge is
-# treated as horizontal or vertical.
+# Contour simplification tolerance (a raster artefact, so in points) and the
+# angle within which an edge is treated as horizontal or vertical.
 SIMPLIFY_PT = 2.0
 AXIS_TOLERANCE_DEG = 12.0
-MIN_EDGE_PT = 3.0
-# A diagonal shorter than this is a stair-step from a door swing, not a splayed wall.
-MIN_DIAGONAL_EDGE_PT = 15.0
 
 
 def _kernel(size_pt: float, px_per_pt: float) -> np.ndarray:
@@ -57,14 +69,23 @@ def _kernel(size_pt: float, px_per_pt: float) -> np.ndarray:
     return cv2.getStructuringElement(cv2.MORPH_RECT, (size, size))
 
 
+def hairlines_are_noise(cache) -> bool:
+    """True when hairline vectors can be erased: the walls are drawn some other way."""
+    widths = sorted(line["stroke_width"] or 0 for line in cache.line_segments)
+    heaviest_common = widths[int(len(widths) * 0.9)] if widths else 0
+    return cache.image_coverage >= 0.2 or heaviest_common > HAIRLINE_PT * HEAVY_STROKE_RATIO
+
+
 @dataclass
 class PageRaster:
     px_per_pt: float
+    pt_per_mm: float
     barrier: np.ndarray  # uint8, 1 where a wall (or anything dark) is
     _closed: dict[float, np.ndarray] = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_cache(cls, cache, px_per_pt: float = PX_PER_PT) -> "PageRaster":
+    def from_cache(cls, cache, scale_ratio: float) -> "PageRaster":
+        px_per_pt = min(PX_PER_PT, math.sqrt(MAX_PIXELS / (cache.page_width_pts * cache.page_height_pts)))
         image = render_page_array(cache.pdf_path, cache.page_index, px_per_pt)
         barrier = (image.max(axis=2) < DARK_MAX_CHANNEL).astype(np.uint8)
 
@@ -76,13 +97,18 @@ class PageRaster:
             x0, x1 = px(span["x"] - TEXT_PAD_PT), px(span["x2"] + TEXT_PAD_PT)
             barrier[max(0, y0):y1, max(0, x0):x1] = 0
 
-        for line in cache.line_segments:
-            if (line["stroke_width"] or 0) <= HAIRLINE_PT:
-                start = (px(line["start"][0]), px(line["start"][1]))
-                end = (px(line["end"][0]), px(line["end"][1]))
-                cv2.line(barrier, start, end, 0, 3)
+        if hairlines_are_noise(cache):
+            for line in cache.line_segments:
+                if (line["stroke_width"] or 0) <= HAIRLINE_PT:
+                    start = (px(line["start"][0]), px(line["start"][1]))
+                    end = (px(line["end"][0]), px(line["end"][1]))
+                    cv2.line(barrier, start, end, 0, 3)
 
-        return cls(px_per_pt=px_per_pt, barrier=barrier)
+        return cls(px_per_pt=px_per_pt, pt_per_mm=1 / (MM_PER_PT * scale_ratio), barrier=barrier)
+
+    def mm(self, value_mm: float) -> float:
+        """Real-world millimetres to points on this sheet."""
+        return value_mm * self.pt_per_mm
 
     def closed(self, radius_pt: float) -> np.ndarray:
         """Barrier with gaps narrower than 2×radius bridged (door openings)."""
@@ -119,14 +145,14 @@ class PageRaster:
 
     def polygon(self, region: np.ndarray) -> list[list[float]]:
         """Outline of a region as an orthogonalised polygon in PDF points."""
-        kernel = _kernel(CLEANUP_PT, self.px_per_pt)
+        kernel = _kernel(self.mm(CLEANUP_MM), self.px_per_pt)
         cleaned = cv2.morphologyEx(cv2.morphologyEx(region, cv2.MORPH_OPEN, kernel), cv2.MORPH_CLOSE, kernel)
         contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return []
         contour = max(contours, key=cv2.contourArea)
         points = cv2.approxPolyDP(contour, SIMPLIFY_PT * self.px_per_pt, True).reshape(-1, 2) / self.px_per_pt
-        return orthogonalize(points.tolist())
+        return orthogonalize(points.tolist(), self.mm(MIN_EDGE_MM), self.mm(MIN_DIAGONAL_EDGE_MM))
 
 
 def _edge_class(a: list[float], b: list[float]) -> str:
@@ -136,12 +162,12 @@ def _edge_class(a: list[float], b: list[float]) -> str:
     return "v" if abs(angle - 90) <= AXIS_TOLERANCE_DEG else "d"
 
 
-def orthogonalize(points: list[list[float]]) -> list[list[float]]:
+def orthogonalize(points: list[list[float]], min_edge: float = 3.0, min_diagonal: float = 28.0) -> list[list[float]]:
     """
-    Square up a traced outline.
+    Square up a traced outline. `min_edge` and `min_diagonal` are in points.
 
-    Short edges go first (diagonal stair-steps left by door swings are allowed
-    to be longer than axis-aligned ones before they count as real), then runs
+    Short edges go first (a diagonal has to be longer than a door swing's
+    radius before it counts as a real splayed wall), then runs
     of same-direction edges collapse to one, then every horizontal edge gets a
     single y and every vertical edge a single x. A corner takes its y from the
     horizontal side and its x from the vertical side, so nothing fights. Long
@@ -150,13 +176,21 @@ def orthogonalize(points: list[list[float]]) -> list[list[float]]:
     pts = [list(p) for p in points]
 
     def drop_short() -> bool:
-        for i in range(len(pts)):
-            a, b = pts[i], pts[(i + 1) % len(pts)]
-            limit = MIN_EDGE_PT if _edge_class(a, b) != "d" else MIN_DIAGONAL_EDGE_PT
-            if math.dist(a, b) < limit:
+        n = len(pts)
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            limit = min_edge if _edge_class(a, b) != "d" else min_diagonal
+            if math.dist(a, b) >= limit:
+                continue
+            before, after = _edge_class(pts[i - 1], a), _edge_class(b, pts[(i + 2) % n])
+            if {before, after} == {"h", "v"}:
+                # A jog between a horizontal and a vertical run is a cut corner:
+                # extend both runs to where they meet instead of averaging.
+                pts[i] = [b[0], a[1]] if before == "h" else [a[0], b[1]]
+            else:
                 pts[i] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-                del pts[(i + 1) % len(pts)]
-                return True
+            del pts[(i + 1) % n]
+            return True
         return False
 
     def drop_collinear() -> bool:
