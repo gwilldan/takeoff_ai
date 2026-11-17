@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     dashscope_api_key: str = ""
     dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     llm_model: str = "qwen3.7-plus"
+    # Qwen's step-by-step reasoning: slower and costlier, and not needed to read
+    # a page or name numbered marks.
+    llm_thinking: bool = False
     llm_vision_model: str | None = None
 
     ocr_language: str = "eng"

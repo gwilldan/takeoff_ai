@@ -1,5 +1,14 @@
 """
-One page end to end: parse → classify → rooms → doors and windows.
+One page end to end:
+
+parse → classify (vision: is it a plan, where are the plan viewports, what
+scale) → check the scale against the printed dimensions → read the walls →
+rooms → doors and windows → wall segments → name and verify (vision, the
+components numbered on the page) → share corner nodes.
+
+Geometry is deterministic; the model reads and names, it never places a
+point. Every model step degrades to the deterministic result when the model
+is unreachable.
 
 A page that is not a plan is not an error; it completes as skipped with a
 reason so the frontend can list it. A document with no plan page completes
@@ -11,12 +20,15 @@ from __future__ import annotations
 import logging
 
 from app.extractor.cache import parse_pdf_to_cache
-from app.extractor.classify import classify_page
+from app.extractor.calibrate import check_scale
+from app.extractor.classify import classify_page, plan_region_mask
 from app.extractor.grid import detect_grid
+from app.extractor.labelling import label_components
 from app.extractor.llm import TokenTracker
 from app.extractor.openings import detect_openings
 from app.extractor.raster import PageRaster
-from app.extractor.rooms import detect_rooms
+from app.extractor.rooms import detect_rooms, pair_room_tags, share_nodes
+from app.extractor.walls import read_walls, wall_segments
 
 log = logging.getLogger(__name__)
 
@@ -47,17 +59,20 @@ def process_page(pdf_path: str, page_index: int, tracker: TokenTracker) -> dict:
         log.info("page %d: skipped — %s", cache.page_number, page["skippedReason"])
         return page
 
-    scale_ratio = float(profile.get("scale_ratio") or 100)
+    scale = check_scale(cache, profile)
     grid = detect_grid(cache)
-    raster = PageRaster.from_cache(cache, scale_ratio)
-    nodes, rooms = detect_rooms(cache, raster, grid, scale_ratio)
-    # Openings live in room walls. A page with no traced room (a schedule that
-    # happens to list door tags, say) gets none.
-    traced = any(room.confidence != "low" for room in rooms)
-    openings = detect_openings(cache, raster, rooms, grid, scale_ratio) if traced else []
-    components = [c.to_dict() for c in (*rooms, *openings)]
+    raster = PageRaster.from_cache(cache, scale.ratio)
+    tags = [(t.x, t.y, t.area_m2) for t in pair_room_tags(cache.text_spans)]
+    reading = read_walls(cache, raster, tags, plan_region_mask(profile.get("plan_regions"), cache, raster))
+    rooms = detect_rooms(cache, raster, reading, grid, scale.ratio)
+    openings = detect_openings(cache, raster, reading, rooms, grid)
+    walls = wall_segments(reading, raster)
+    rooms, openings = label_components(cache, tracker, rooms, openings)
+    nodes = share_nodes(rooms, grid)
+    # Back to front: rooms and walls behind, doors and windows on top.
+    components = [c.to_dict() for c in (*rooms, *walls, *openings)]
 
-    notes = list(profile.get("notes") or [])
+    notes = list(profile.get("notes") or []) + scale.notes + [f"Walls read as: {reading.name}"]
     if not grid.is_present:
         notes.append("No setting-out grid detected — nodes carry no grid references")
     if cache.text_source == "ocr":
@@ -70,10 +85,11 @@ def process_page(pdf_path: str, page_index: int, tracker: TokenTracker) -> dict:
     log.info("page %d: plan — %s", cache.page_number, counts)
     return {
         **page,
-        "scale": {"text": profile.get("scale", "unknown"), "ratio": scale_ratio, "confidence": profile.get("confidence", "medium")},
+        "scale": scale.to_dict(),
         "grid": grid.to_dict(),
         "nodes": nodes,
         "components": components,
         "counts": counts,
         "notes": notes,
+        "tokenUsage": tracker.to_dict(),
     }

@@ -78,7 +78,9 @@ def _normalize_messages(messages: list[dict]) -> list[dict]:
 
 def chat_with_tracking(tracker: TokenTracker, *, step: str, messages: list[dict], model: str | None = None) -> LLMResponse:
     model = model or settings.llm_model
-    completion = get_client().chat.completions.create(model=model, messages=_normalize_messages(messages))
+    completion = get_client().chat.completions.create(
+        model=model, messages=_normalize_messages(messages), extra_body={"enable_thinking": settings.llm_thinking},
+    )
 
     usage = getattr(completion, "usage", None)
     prompt = int(getattr(usage, "prompt_tokens", 0) or 0)

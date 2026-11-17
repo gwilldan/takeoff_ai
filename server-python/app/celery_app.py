@@ -18,5 +18,7 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
     result_expires=3600,
+    # A page of an A1 sheet can take ~1.5 GB; recycle a worker child that grows past it.
+    worker_max_memory_per_child=1_500_000,  # KiB
     broker_connection_retry_on_startup=True,
 )

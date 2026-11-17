@@ -25,6 +25,9 @@ export type ExtractedComponent = {
   areaM2?: number | null;
   measuredAreaM2?: number | null;
   hostWallId?: string | null;
+  roomIds?: string[];
+  exterior?: boolean;
+  source?: 'walls' | 'label';
   name?: string | null;
   notes?: string[];
   /** Ids into the page's `nodes`: the shared corner points this outline is drawn through. */
@@ -39,7 +42,7 @@ export type ExtractedPage = {
   planType?: string;
   skippedReason?: string;
   pageSize?: { width: number; height: number };
-  scale?: { text: string; ratio: number; confidence?: string };
+  scale?: { text: string; ratio: number; confidence?: string; source?: string; dimensionsChecked?: number };
   grid?: { columns: { ref: string; x: number }[]; rows: { ref: string; y: number }[] };
   nodes?: ExtractedNode[];
   components?: ExtractedComponent[];
@@ -66,7 +69,8 @@ export type ExtractionDocument = {
  * renderer needs no new shape type.
  */
 const LAYER_STYLES: Record<string, { label: string; color: string; kind: ShapeKind }> = {
-  walls: { label: 'Walls', color: '#2563EB', kind: 'line' },
+  // A wall arrives as its band — four corners giving length and thickness.
+  walls: { label: 'Walls', color: '#2563EB', kind: 'area' },
   doors: { label: 'Doors', color: '#EA580C', kind: 'line' },
   windows: { label: 'Windows', color: '#0891B2', kind: 'line' },
   columns: { label: 'Columns', color: '#DB2777', kind: 'area' },
@@ -75,8 +79,12 @@ const LAYER_STYLES: Record<string, { label: string; color: string; kind: ShapeKi
 
 const FALLBACK_STYLE = { color: '#7C3AED', kind: 'line' as ShapeKind };
 
-/** Order layers the way a drawing reads: structure first, then openings, then space. */
-const LAYER_ORDER = ['walls', 'columns', 'doors', 'windows', 'rooms'];
+/**
+ * Paint order, back to front: the overlay draws layers in list order and
+ * hit-tests the reverse, so rooms sit behind the walls that bound them and
+ * doors and windows sit on top where they can always be seen and picked.
+ */
+const LAYER_ORDER = ['rooms', 'walls', 'columns', 'doors', 'windows'];
 
 function toPoints(polyline: number[][]): Point[] {
   return polyline
@@ -138,10 +146,8 @@ export type ImportOptions = {
   /**
    * Component classes to import. Omit to take everything the extraction found.
    *
-   * The workspace currently passes `['rooms']`: rooms are anchored on the
-   * drawing's own printed area tags and are reliable across drawing styles,
-   * whereas wall reconstruction depends on a convention not every drawing
-   * follows. Widen this list as each class earns its place.
+   * The workspace passes the classes it can edit and total: rooms, walls,
+   * doors and windows.
    */
   only?: string[];
 };

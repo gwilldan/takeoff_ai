@@ -38,15 +38,18 @@ Extraction is a Celery chord: `extract-document` validates the upload and fans o
 
 ## Extraction
 
-`app/extractor` reads rooms, doors and windows, one page at a time. The full walkthrough is in [docs/extraction-pipeline.md](../docs/extraction-pipeline.md).
+`app/extractor` reads rooms, walls, doors and windows, one page at a time. Geometry is deterministic; the vision model only reads and names, never places a point. The full walkthrough is in [docs/extraction-pipeline.md](../docs/extraction-pipeline.md).
 
-1. `cache.py` parses the page: text spans (OCR via Tesseract when the page is a scan), vector lines, embedded-image coverage.
-2. `classify.py` skips pages with nothing drawn and pages that read as sections or elevations, then asks the vision model whether the page is a plan and at what scale. Only plan types are measured.
-3. `raster.py` renders the page and builds a wall mask from dark pixels, with text and (where safe) hairline vectors erased. Works whether walls are vectors, an embedded image or a scan. All geometric thresholds are in millimetres and converted through the sheet scale.
-4. `rooms.py` pairs each room name with its printed area, flood-fills the pocket around the tag, bridging door openings with the smallest closing radius whose area matches the printed figure, and squares up the outline. Corners are clustered into page-level `nodes` with grid references.
-5. `openings.py` anchors each door/window tag on the nearest room wall and measures the opening from the gap in the wall mask.
+1. `cache.py` parses the page: text spans (OCR via Tesseract on scans), vector lines, vector cut regions, image coverage.
+2. `classify.py` skips empty pages, sections and schedules, then asks the vision model whether the page is a plan, where the plan drawings sit on the sheet, and at what scale.
+3. `calibrate.py` checks the stated scale against the printed dimensions: confirms it, overrules it when the sheet was resized, or measures it when none is stated.
+4. `raster.py` renders the page crisp at a resolution set in real millimetres.
+5. `walls.py` reads the walls without labels, from several readings scored against each other, bridges door and window gaps, and leaves the enclosed pockets.
+6. `rooms.py` turns pockets into rooms, names and checks them against printed labels, and re-traces around a label where the pocket disagrees.
+7. `openings.py` places tagged openings in their walls and finds untagged ones from drawn door swings and glazing.
+8. `labelling.py` shows the model every component numbered and lets it name unlabelled rooms and reject non-rooms and non-openings.
 
-Test against the sample drawing with `uv run pytest tests/test_rooms.py`. The OCR test needs Tesseract, which the Docker image installs.
+Test with `uv run pytest tests/test_extraction.py` (no API key needed). The OCR test needs Tesseract, which the Docker image installs.
 
 Redis is both the Celery broker and result backend; the backend is only used to coordinate the chord and expires results after an hour.
 
@@ -73,7 +76,7 @@ cd server-python
 cp .env.example .env   # fill in DASHSCOPE_API_KEY, set DOCUMENT_STORAGE_DIR / EXTRACTION_OUTPUT_DIR to writable paths
 uv sync
 uv run fastapi dev app/main.py --port 4000
-uv run celery -A app.celery_app worker --loglevel=info --concurrency=1
+uv run celery -A app.celery_app worker --loglevel=info --concurrency=2
 ```
 
-Requires a Redis at `REDIS_URL`. Raise `WORKER_CONCURRENCY` to process pages of one document in parallel.
+Requires a Redis at `REDIS_URL`. `WORKER_CONCURRENCY` (default 2) is how many pages are processed in parallel; each worker can peak near 1.5 GB on an A1 sheet.

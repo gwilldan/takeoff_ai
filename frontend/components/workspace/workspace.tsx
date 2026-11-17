@@ -24,10 +24,10 @@ import { useViewerState, clampZoom } from './use-viewer-state';
 import { ViewerToolbar } from './viewer-toolbar';
 
 /**
- * Component classes taken from an extraction today: rooms traced from the
- * walls, and the door and window openings anchored on their reference tags.
+ * Component classes taken from an extraction: rooms and walls read from the
+ * drawing's wall lines, and the door and window openings in them.
  */
-const IMPORTED_LAYERS = ['rooms', 'doors', 'windows'];
+const IMPORTED_LAYERS = ['rooms', 'walls', 'doors', 'windows'];
 
 export function Workspace() {
   const [file, setFile] = useState<File | null>(null);
@@ -204,6 +204,8 @@ export function Workspace() {
           onNotificationUrlChange={setNotificationUrl}
           onImport={handleImportExtraction}
           importedAt={importedAt}
+          currentPage={viewer.currentPage}
+          onGoToPage={viewer.goToPage}
         />
 
         {pendingCalibrationPts !== null ? (

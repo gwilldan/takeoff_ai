@@ -37,7 +37,7 @@ services:
       context: .
       target: prod
     container_name: pdf-extraction-worker
-    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-1}"]
+    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-2}"]
     environment:
       <<: *app-env
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}

@@ -1,17 +1,21 @@
 """
-Pixel-space room detection.
+The page as pixels.
 
 Walls on a drawing may be vectors, hatching, or — as on scanned and
-image-backed sheets — nothing but pixels. Rendering the page and working in
-pixel space handles all three the same way: dark pixels are barriers, a room
-is the pocket of free space around its tag, and its outline is the contour of
-that pocket.
+image-backed sheets — nothing but pixels. Rendering the page once and working
+in pixel space handles all of them the same way.
 
-Two things are erased from the barrier mask before any fill, because the
-cache knows exactly where they are: text (so a label never splits or seals a
-room) and hairline vectors (dimension lines, grid lines and leaders, which run
-straight through rooms). Door openings are bridged by morphological closing,
-with the radius chosen per room against the printed area in `rooms.py`.
+The page is rendered without anti-aliasing, so a 0.2 pt grey hatch line
+keeps its colour instead of fading into the paper, at a resolution set in
+real millimetres per pixel so a 1:50 and a 1:200 sheet are treated alike.
+Two masks come out of it, both with text erased (a label must never become a
+wall or seal a room):
+
+- `ink`: anything darker than light grey. Walls are read from this
+  (`walls.py`), because hatching is often grey.
+- `barrier`: only dark ink, with hairline vectors also erased. Used where a
+  room is traced around its own label (`rooms.py`) and to look inside an
+  opening (`openings.py`).
 """
 
 from __future__ import annotations
@@ -26,13 +30,18 @@ from app.extractor.render import render_page_array
 
 MM_PER_PT = 25.4 / 72
 
-# Render resolution, capped so an A0 sheet does not become a 70-megapixel mask.
+# Render resolution: fine enough that a pixel is this many real millimetres,
+# never finer than PX_PER_PT, and capped so an A0 sheet stays a sane size.
+MM_PER_PX = 15.0
 PX_PER_PT = 3.0
-MAX_PIXELS = 30_000_000
+MAX_PIXELS = 20_000_000
 
-# A pixel is a barrier when every channel is below this: black and dark-red
+# A pixel is a barrier when every channel is below DARK: black and dark-red
 # walls count, bright red dimension lines and grey ghosted layers do not.
+# It is ink when every channel is below INK: grey hatching counts, pale room
+# fills (a light yellow, say) do not.
 DARK_MAX_CHANNEL = 150
+INK_MAX_CHANNEL = 200
 
 # Vector strokes at or below this width are dimension lines, grid lines and
 # leaders — but only on sheets that also draw something heavier. A CAD export
@@ -80,14 +89,19 @@ def hairlines_are_noise(cache) -> bool:
 class PageRaster:
     px_per_pt: float
     pt_per_mm: float
-    barrier: np.ndarray  # uint8, 1 where a wall (or anything dark) is
+    barrier: np.ndarray  # uint8, 1 where dark ink is
+    ink: np.ndarray  # uint8, 1 where any ink darker than light grey is
     _closed: dict[float, np.ndarray] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_cache(cls, cache, scale_ratio: float) -> "PageRaster":
-        px_per_pt = min(PX_PER_PT, math.sqrt(MAX_PIXELS / (cache.page_width_pts * cache.page_height_pts)))
-        image = render_page_array(cache.pdf_path, cache.page_index, px_per_pt)
-        barrier = (image.max(axis=2) < DARK_MAX_CHANNEL).astype(np.uint8)
+        pt_per_mm = 1 / (MM_PER_PT * scale_ratio)
+        px_per_pt = min(PX_PER_PT, 1 / (MM_PER_PX * pt_per_mm),
+                        math.sqrt(MAX_PIXELS / (cache.page_width_pts * cache.page_height_pts)))
+        darkness = render_page_array(cache.pdf_path, cache.page_index, px_per_pt, antialias=False).max(axis=2)
+        barrier = (darkness < DARK_MAX_CHANNEL).astype(np.uint8)
+        ink = (darkness < INK_MAX_CHANNEL).astype(np.uint8)
+        del darkness
 
         def px(value: float) -> int:
             return int(round(value * px_per_pt))
@@ -96,6 +110,7 @@ class PageRaster:
             y0, y1 = px(span["y"] - TEXT_PAD_PT), px(span["y2"] + TEXT_PAD_PT)
             x0, x1 = px(span["x"] - TEXT_PAD_PT), px(span["x2"] + TEXT_PAD_PT)
             barrier[max(0, y0):y1, max(0, x0):x1] = 0
+            ink[max(0, y0):y1, max(0, x0):x1] = 0
 
         if hairlines_are_noise(cache):
             for line in cache.line_segments:
@@ -104,11 +119,19 @@ class PageRaster:
                     end = (px(line["end"][0]), px(line["end"][1]))
                     cv2.line(barrier, start, end, 0, 3)
 
-        return cls(px_per_pt=px_per_pt, pt_per_mm=1 / (MM_PER_PT * scale_ratio), barrier=barrier)
+        return cls(px_per_pt=px_per_pt, pt_per_mm=pt_per_mm, barrier=barrier, ink=ink)
 
     def mm(self, value_mm: float) -> float:
         """Real-world millimetres to points on this sheet."""
         return value_mm * self.pt_per_mm
+
+    def px(self, value_mm: float) -> float:
+        """Real-world millimetres to pixels."""
+        return value_mm * self.pt_per_mm * self.px_per_pt
+
+    def m2(self, pixels: float) -> float:
+        """A pixel count as real square metres."""
+        return pixels / self.px(1000) ** 2
 
     def closed(self, radius_pt: float) -> np.ndarray:
         """Barrier with gaps narrower than 2×radius bridged (door openings)."""
@@ -143,15 +166,19 @@ class PageRaster:
     def area_pts2(self, region: np.ndarray) -> float:
         return float(np.count_nonzero(region)) / (self.px_per_pt ** 2)
 
-    def polygon(self, region: np.ndarray) -> list[list[float]]:
-        """Outline of a region as an orthogonalised polygon in PDF points."""
+    def polygon(self, region: np.ndarray, origin: tuple[int, int] = (0, 0)) -> list[list[float]]:
+        """
+        Outline of a region as an orthogonalised polygon in PDF points.
+        `origin` is the region's top-left pixel when it is a crop of the page.
+        """
         kernel = _kernel(self.mm(CLEANUP_MM), self.px_per_pt)
         cleaned = cv2.morphologyEx(cv2.morphologyEx(region, cv2.MORPH_OPEN, kernel), cv2.MORPH_CLOSE, kernel)
         contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return []
         contour = max(contours, key=cv2.contourArea)
-        points = cv2.approxPolyDP(contour, SIMPLIFY_PT * self.px_per_pt, True).reshape(-1, 2) / self.px_per_pt
+        simplified = cv2.approxPolyDP(contour, SIMPLIFY_PT * self.px_per_pt, True).reshape(-1, 2) + origin
+        points = simplified / self.px_per_pt
         return orthogonalize(points.tolist(), self.mm(MIN_EDGE_MM), self.mm(MIN_DIAGONAL_EDGE_MM))
 
 

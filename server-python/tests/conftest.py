@@ -6,6 +6,7 @@ os.environ.update(
     DOCUMENT_STORAGE_DIR=f"{_tmp}/uploads",
     EXTRACTION_OUTPUT_DIR=f"{_tmp}/output",
     QUEUE_BACKOFF_DELAY_MS="0",
+    DASHSCOPE_API_KEY="",  # tests never call the model; every model step takes its fallback
 )
 
 import fakeredis

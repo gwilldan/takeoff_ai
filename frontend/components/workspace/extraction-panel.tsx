@@ -19,6 +19,9 @@ export type ExtractionPanelProps = {
   onNotificationUrlChange: (value: string) => void;
   onImport: (result: ExtractionDocument) => void;
   importedAt: string | null;
+  /** Page on screen, highlighted in the plan page list. */
+  currentPage: number;
+  onGoToPage: (pageNumber: number) => void;
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -37,7 +40,9 @@ export function ExtractionPanel({
   notificationUrl,
   onNotificationUrlChange,
   onImport,
-  importedAt
+  importedAt,
+  currentPage,
+  onGoToPage
 }: ExtractionPanelProps) {
   const result = job?.result;
 
@@ -138,20 +143,43 @@ export function ExtractionPanel({
               <div>
                 <p className="pane-label">Plan pages</p>
                 <ul className="mt-1.5 space-y-1">
-                  {planPages.map((page) => (
-                    <li
-                      key={page.pageNumber}
-                      className="flex items-baseline justify-between gap-2 border-b border-edge pb-1 text-[11px]"
-                    >
-                      <span className="text-ink">
-                        p{page.pageNumber}{' '}
-                        <span className="text-ink-faint">{page.planType}</span>
-                      </span>
-                      <span className="shrink-0 font-mono text-[10px] text-ink-soft">
-                        {page.scale?.text ?? 'unknown'}
-                      </span>
-                    </li>
-                  ))}
+                  {planPages.map((page) => {
+                    const onScreen = page.pageNumber === currentPage;
+                    const counts = Object.entries(page.counts ?? {})
+                      .map(([layer, count]) => `${count} ${layer}`)
+                      .join(' · ');
+
+                    return (
+                      <li key={page.pageNumber}>
+                        <button
+                          type="button"
+                          onClick={() => onGoToPage(page.pageNumber)}
+                          aria-current={onScreen ? 'page' : undefined}
+                          title={`Go to page ${page.pageNumber}`}
+                          className={`w-full rounded-md border px-2 py-1.5 text-left text-[11px] transition-colors ${
+                            onScreen
+                              ? 'border-ink bg-chrome'
+                              : 'border-edge hover:border-ink hover:bg-chrome'
+                          }`}
+                        >
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-ink">
+                              p{page.pageNumber}{' '}
+                              <span className="text-ink-faint">{page.planType}</span>
+                            </span>
+                            <span className="shrink-0 font-mono text-[10px] text-ink-soft">
+                              {page.scale?.text ?? 'unknown'}
+                            </span>
+                          </span>
+                          {counts ? (
+                            <span className="mt-0.5 block font-mono text-[10px] text-ink-faint">
+                              {counts}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : null}
@@ -213,7 +241,7 @@ export function ExtractionPanel({
         {!job ? (
           <p className="text-[11px] leading-relaxed text-ink-faint">
             No job yet. Use “Run extraction” in the top bar to read this drawing set for
-            walls, doors, windows, columns and rooms.
+            rooms, walls, doors and windows.
           </p>
         ) : null}
       </div>
