@@ -8,6 +8,7 @@ import { useAnnotations } from '../../lib/annotations/store';
 import {
   HIT_TOLERANCE_PX,
   SNAP_TOLERANCE_PX,
+  type Layer,
   type Point,
   type Shape,
   type ShapeKind,
@@ -38,6 +39,8 @@ export type AnnotationOverlayProps = {
   scale: number;
   tool: ToolId;
   onCalibrationLine: (lengthPts: number) => void;
+  /** Shapes of this layer stand out; every other layer is dimmed. */
+  highlightedLayerId: string | null;
 };
 
 function isDrawingTool(tool: ToolId): tool is 'line' | 'area' | 'calibrate' {
@@ -60,7 +63,8 @@ export function AnnotationOverlay({
   pageSize,
   scale,
   tool,
-  onCalibrationLine
+  onCalibrationLine,
+  highlightedLayerId
 }: AnnotationOverlayProps) {
   const { state, dispatch } = useAnnotations();
   const [draft, setDraft] = useState<Point[]>([]);
@@ -77,7 +81,7 @@ export function AnnotationOverlay({
   }, [tool, pageNumber]);
 
   const visibleShapes = useMemo(() => {
-    const entries: Array<{ shape: Shape; color: string }> = [];
+    const entries: Array<{ shape: Shape; layer: Layer }> = [];
 
     for (const layer of state.layers) {
       if (!layer.visible) {
@@ -86,7 +90,7 @@ export function AnnotationOverlay({
 
       for (const shape of layer.shapes) {
         if (shape.pageNumber === pageNumber) {
-          entries.push({ shape, color: layer.color });
+          entries.push({ shape, layer });
         }
       }
     }
@@ -382,21 +386,30 @@ export function AnnotationOverlay({
       className={`absolute left-0 top-0 ${interactive ? cursorClass : 'pointer-events-none'}`}
       role="presentation"
     >
-      {visibleShapes.map(({ shape: stored, color }) => {
+      {visibleShapes.map(({ shape: stored, layer }) => {
+        const color = layer.color;
         const selected = stored.id === state.selectedShapeId;
+        const highlighted = highlightedLayerId === layer.id;
         const shape = edit && edit.shape.id === stored.id ? { ...stored, points: edit.points } : stored;
         const pointsAttribute = shape.points.map((point) => `${point.x},${point.y}`).join(' ');
+        // Extracted shapes are drawn as the annotator draws them: a 0.8 pt outline
+        // that scales with the drawing. Selection and highlight switch to a fixed
+        // screen width so they read at any zoom.
+        const annotated = layer.source === 'extraction' && !selected && !highlighted;
+        const xs = shape.points.map((p) => p.x);
+        const ys = shape.points.map((p) => p.y);
 
         return (
-          <g key={shape.id}>
+          <g key={shape.id} opacity={highlightedLayerId && !highlighted ? 0.2 : 1}>
             {shape.kind === 'area' ? (
               <polygon
                 points={pointsAttribute}
                 fill={color}
-                fillOpacity={0.22}
+                fillOpacity={layer.fillOpacity ?? 0.22}
                 stroke={color}
-                strokeWidth={selected ? 3 : 1.75}
-                vectorEffect="non-scaling-stroke"
+                strokeWidth={annotated ? 0.8 : selected || highlighted ? 3 : 1.75}
+                strokeDasharray={shape.needsReview ? (annotated ? '3 2' : '6 4') : undefined}
+                vectorEffect={annotated ? undefined : 'non-scaling-stroke'}
               />
             ) : (
               <polyline
@@ -443,7 +456,7 @@ export function AnnotationOverlay({
             ) : null}
 
             {/* A named element carries its label always — a room outline nobody
-                can identify is not an annotation. References and grid marks show
+                can identify is not an annotation. A door or window mark shows
                 on selection, where they answer "which one is this on the paper?"
                 without crowding every shape on the sheet. */}
             {shape.name ? (
@@ -462,7 +475,20 @@ export function AnnotationOverlay({
               </text>
             ) : null}
 
-            {selected && (shape.reference || shape.gridRef) ? (
+            {/* The annotator's "class score" label, at the shape's top-left corner. */}
+            {layer.labelSize && shape.score !== undefined ? (
+              <text
+                x={Math.min(...xs) + 1}
+                y={Math.min(...ys) + layer.labelSize + 1}
+                fontSize={layer.labelSize}
+                fill={color}
+                className="pointer-events-none select-none"
+              >
+                {`${shape.componentType} ${shape.score.toFixed(2)}`}
+              </text>
+            ) : null}
+
+            {selected && shape.reference ? (
               <text
                 x={shape.points[0]!.x + 8 / scale}
                 y={shape.points[0]!.y - 8 / scale}
@@ -473,7 +499,7 @@ export function AnnotationOverlay({
                 strokeWidth={3 / scale}
                 paintOrder="stroke"
               >
-                {[shape.reference, shape.gridRef].filter(Boolean).join('  ')}
+                {shape.reference}
               </text>
             ) : null}
           </g>

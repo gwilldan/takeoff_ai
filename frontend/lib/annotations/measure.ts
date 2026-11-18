@@ -1,4 +1,4 @@
-import { polygonArea, polylineLength } from './geometry';
+import { bandLength, polygonArea, polylineLength } from './geometry';
 import type { Calibration, Layer, Shape } from './types';
 
 export type LengthUnit = 'mm' | 'm';
@@ -65,23 +65,24 @@ export function formatArea(areaPts2: number, calibration: Calibration | null): s
   return `${Math.round(squareMillimetres)} mm²`;
 }
 
-export function shapeMeasurement(shape: Shape, calibration: Calibration | null): string {
-  if (shape.kind === 'line') {
-    return formatLength(polylineLength(shape.points), calibration);
+/**
+ * Total across a layer's shapes, in the layer's own unit. Pass `shapes` to total
+ * a subset, such as the shapes on one page.
+ */
+export function layerTotal(layer: Layer, calibration: Calibration | null, shapes: Shape[] = layer.shapes): string {
+  if (layer.measure === 'count') {
+    return String(shapes.length);
   }
 
-  return formatArea(polygonArea(shape.points), calibration);
-}
+  if (layer.measure === 'band') {
+    return formatLength(shapes.reduce((sum, shape) => sum + bandLength(shape.points), 0), calibration);
+  }
 
-/** Total across every shape in a layer, in the layer's own unit. */
-export function layerTotal(layer: Layer, calibration: Calibration | null): string {
   if (layer.kind === 'line') {
-    const total = layer.shapes.reduce((sum, shape) => sum + polylineLength(shape.points), 0);
-    return formatLength(total, calibration);
+    return formatLength(shapes.reduce((sum, shape) => sum + polylineLength(shape.points), 0), calibration);
   }
 
-  const total = layer.shapes.reduce((sum, shape) => sum + polygonArea(shape.points), 0);
-  return formatArea(total, calibration);
+  return formatArea(shapes.reduce((sum, shape) => sum + polygonArea(shape.points), 0), calibration);
 }
 
 /**
@@ -93,7 +94,8 @@ export function scaleLabel(calibration: Calibration | null): string {
     return 'Uncalibrated';
   }
 
-  const ratio = MM_OF_PAPER_PER_POINT / calibration.pointsPerMillimetre;
+  // One point is MM_OF_PAPER_PER_POINT mm of paper and 1 / pointsPerMillimetre mm of real world.
+  const ratio = 1 / (MM_OF_PAPER_PER_POINT * calibration.pointsPerMillimetre);
 
   return `1:${Math.round(ratio)}`;
 }

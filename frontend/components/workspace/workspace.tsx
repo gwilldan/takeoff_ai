@@ -8,7 +8,7 @@ import {
   calibrationFromExtraction,
   guidesFromExtraction,
   layersFromExtraction,
-  type ExtractionDocument
+  type TakeoffDocument
 } from '../../lib/annotations/extraction-import';
 import { documentKeyFor, loadAnnotations } from '../../lib/annotations/storage';
 import { AnnotationOverlay } from './annotation-overlay';
@@ -23,12 +23,6 @@ import { useExtractionJob } from './use-extraction-job';
 import { useViewerState, clampZoom } from './use-viewer-state';
 import { ViewerToolbar } from './viewer-toolbar';
 
-/**
- * Component classes taken from an extraction: rooms and walls read from the
- * drawing's wall lines, and the door and window openings in them.
- */
-const IMPORTED_LAYERS = ['rooms', 'walls', 'doors', 'windows'];
-
 export function Workspace() {
   const [file, setFile] = useState<File | null>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
@@ -36,6 +30,7 @@ export function Workspace() {
   const [notificationUrl, setNotificationUrl] = useState('');
   const [pendingCalibrationPts, setPendingCalibrationPts] = useState<number | null>(null);
   const [importedAt, setImportedAt] = useState<string | null>(null);
+  const [highlightedLayerId, setHighlightedLayerId] = useState<string | null>(null);
   const autoImportedRef = useRef<string | null>(null);
   const extraction = useExtractionJob();
   const { state, dispatch } = useAnnotations();
@@ -75,10 +70,10 @@ export function Workspace() {
   );
 
   const handleImportExtraction = useCallback(
-    (result: ExtractionDocument) => {
+    (result: TakeoffDocument) => {
       dispatch({
         type: 'importExtraction',
-        layers: layersFromExtraction(result, { only: IMPORTED_LAYERS }),
+        layers: layersFromExtraction(result),
         guides: guidesFromExtraction(result),
         // Adopt the drawing's own scale so totals read in millimetres straight
         // away, unless the user has already calibrated by hand.
@@ -96,7 +91,7 @@ export function Workspace() {
   const job = extraction.job;
   const progressKey =
     job?.result && (job.status === 'processing' || job.status === 'completed')
-      ? `${job.id}:${job.status}:${job.result.document?.pagesProcessed ?? job.result.pages?.length ?? 0}`
+      ? `${job.id}:${job.status}:${job.result.document.pages_processed}`
       : null;
 
   useEffect(() => {
@@ -136,7 +131,11 @@ export function Workspace() {
       />
 
       <div className="relative grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)_220px]">
-        <LayerSidebar />
+        <LayerSidebar
+          currentPage={viewer.currentPage}
+          highlightedLayerId={highlightedLayerId}
+          onHighlight={setHighlightedLayerId}
+        />
 
         <section className="flex min-h-0 flex-col">
           {pdfDocument && pageSize ? (
@@ -168,6 +167,7 @@ export function Workspace() {
                     scale={viewer.zoom}
                     tool={viewer.tool}
                     onCalibrationLine={setPendingCalibrationPts}
+                    highlightedLayerId={highlightedLayerId}
                   />
                 }
               />

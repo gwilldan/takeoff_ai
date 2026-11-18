@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.redis_client import get_redis
-from app.routes import extract, jobs
+from app.routes import extract, jobs, webhooks
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -24,6 +24,7 @@ app = FastAPI(title="PDF extraction API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.frontend_origins, allow_methods=["*"], allow_headers=["*"])
 app.include_router(extract.router)
 app.include_router(jobs.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/health")

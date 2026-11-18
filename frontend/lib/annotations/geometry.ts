@@ -20,6 +20,17 @@ export function polylineLength(points: Point[]): number {
  * Absolute value, so winding direction does not matter.
  * Returns 0 for fewer than 3 points.
  */
+/**
+ * Length of a wall band: its longest edge. A band is the rectangle a wall is
+ * drawn as, so its long side is the wall's run.
+ */
+export function bandLength(points: Point[]): number {
+  return points.reduce((longest, point, i) => {
+    const next = points[(i + 1) % points.length]!;
+    return Math.max(longest, distance(point, next));
+  }, 0);
+}
+
 export function polygonArea(points: Point[]): number {
   if (points.length < 3) {
     return 0;

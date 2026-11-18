@@ -3,10 +3,12 @@ Job records live in Redis as JSON under `<prefix><jobId>` with a sliding TTL.
 
 `update_job` runs inside a WATCH transaction so page tasks finishing on
 different workers at the same moment cannot overwrite each other's pages.
+Takeoffs in flight are kept beside the job, keyed by QuantTakeoff's id.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 from redis import WatchError
@@ -59,3 +61,22 @@ def update_job(job_id: str, mutation: Mutation) -> JobRecord | None:
                 return job
             except WatchError:
                 continue
+
+
+# A takeoff in flight: which job and page it belongs to, and what we read from
+# the page before sending it. Lives until the page is published.
+def _takeoff_key(takeoff_id: str) -> str:
+    return f"{settings.redis_job_prefix}takeoff:{takeoff_id}"
+
+
+def save_pending_takeoff(takeoff_id: str, pending: dict[str, Any]) -> None:
+    get_redis().set(_takeoff_key(takeoff_id), json.dumps(pending), ex=settings.job_ttl_seconds)
+
+
+def get_pending_takeoff(takeoff_id: str) -> dict[str, Any] | None:
+    raw = get_redis().get(_takeoff_key(takeoff_id))
+    return json.loads(raw) if raw else None
+
+
+def drop_pending_takeoff(takeoff_id: str) -> None:
+    get_redis().delete(_takeoff_key(takeoff_id))

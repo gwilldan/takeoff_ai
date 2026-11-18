@@ -32,9 +32,6 @@ class ExtractionCache:
     full_text: str = ""
     text_spans: list[dict] = field(default_factory=list)
     line_segments: list[dict] = field(default_factory=list)
-    # Closed vector regions a CAD export uses for cut elements: hatch clip paths
-    # and dark-filled paths, as point lists. Wall evidence on vector sheets.
-    cut_regions: list[list[list[float]]] = field(default_factory=list)
     image_coverage: float = 0.0  # share of the page covered by embedded images
     text_source: str = "native"  # or "ocr" when the page had no usable text layer
 
@@ -83,43 +80,10 @@ def _collect_text_spans(page, textpage=None) -> list[dict]:
     return spans
 
 
-def _path_points(items) -> list[list[float]]:
-    points = []
-    for item in items:
-        if item[0] == "l":
-            points += [item[1], item[2]]
-        elif item[0] == "c":
-            points += [item[1], item[4]]
-        elif item[0] == "re":
-            points += [item[1].tl, item[1].tr, item[1].br, item[1].bl]
-        elif item[0] == "qu":
-            points += [item[1].ul, item[1].ur, item[1].lr, item[1].ll]
-    return [[round(p.x, 2), round(p.y, 2)] for p in points]
-
-
-def _collect_vectors(page) -> tuple[list[dict], list[list[list[float]]]]:
-    """
-    Stroked lines and cut regions in one pass (get_drawings re-walks the
-    content stream each call).
-
-    A cut region is a clip path that hatching is drawn inside — how ArchiCAD
-    and Revit draw a cut wall — or a path filled darker than light grey, how
-    AutoCAD draws a solid wall. Clip paths larger than a twentieth of the page
-    are viewports, not elements.
-    """
-    lines, regions = [], []
-    page_area = page.rect.width * page.rect.height
-    paths = page.get_drawings(extended=True)
-
-    for index, path in enumerate(paths):
-        if path["type"] == "clip":
-            following = paths[index + 1] if index + 1 < len(paths) else None
-            clips_drawing = following and following["type"] != "clip" and following.get("level", 0) > path.get("level", 0)
-            if clips_drawing and path["scissor"].width * path["scissor"].height < page_area / 20:
-                regions.append(_path_points(path["items"]))
-            continue
-        if path.get("fill") and max(path["fill"]) < 0.8:
-            regions.append(_path_points(path["items"]))
+def _collect_lines(page) -> list[dict]:
+    """Every stroked straight segment, read in one pass of the content stream."""
+    lines = []
+    for path in page.get_drawings():
         if "s" not in path["type"]:
             continue
         color = list(path["color"]) if path.get("color") else None
@@ -135,7 +99,7 @@ def _collect_vectors(page) -> tuple[list[dict], list[list[list[float]]]]:
                 "color_rgb": color,
                 "stroke_width": width,
             })
-    return lines, [r for r in regions if len(r) >= 3]
+    return lines
 
 
 def _image_coverage(page) -> float:
@@ -166,8 +130,6 @@ def parse_pdf_to_cache(pdf_path: str, page_index: int) -> ExtractionCache:
         if len(spans) < MIN_NATIVE_SPANS and coverage >= MIN_SCAN_IMAGE_COVERAGE and (textpage := _ocr_textpage(page)):
             spans, full_text, source = _collect_text_spans(page, textpage), page.get_text("text", textpage=textpage), "ocr"
 
-        lines, regions = _collect_vectors(page)
-
         return ExtractionCache(
             pdf_path=pdf_path,
             page_index=page_index,
@@ -175,8 +137,7 @@ def parse_pdf_to_cache(pdf_path: str, page_index: int) -> ExtractionCache:
             page_height_pts=round(page.rect.height, 1),
             full_text=full_text,
             text_spans=spans,
-            line_segments=lines,
-            cut_regions=regions,
+            line_segments=_collect_lines(page),
             image_coverage=coverage,
             text_source=source,
         )

@@ -6,7 +6,11 @@ import { LAYER_PALETTE } from '../../lib/annotations/types';
 
 export type LayerRowProps = {
   layer: Layer;
+  /** Shapes counted in `total`: the page's, or the whole set's. */
+  count: number;
   active: boolean;
+  /** Its shapes are highlighted on the page. */
+  highlighted: boolean;
   total: string;
   onActivate: () => void;
   onRename: (name: string) => void;
@@ -17,7 +21,9 @@ export type LayerRowProps = {
 
 export function LayerRow({
   layer,
+  count,
   active,
+  highlighted,
   total,
   onActivate,
   onRename,
@@ -52,6 +58,8 @@ export function LayerRow({
       className={`group relative rounded-md border px-2 py-2 transition-colors ${
         active ? 'border-ink bg-chrome' : 'border-transparent hover:bg-chrome-2'
       }`}
+      style={highlighted ? { boxShadow: `inset 3px 0 0 ${layer.color}` } : undefined}
+      aria-current={highlighted ? 'true' : undefined}
     >
       <div className="flex items-start gap-2">
         <button
@@ -108,8 +116,8 @@ export function LayerRow({
               </span>
             ) : null}
             <span>
-              {layer.kind === 'line' ? 'Length' : 'Area'} · {layer.shapes.length}{' '}
-              {layer.shapes.length === 1 ? 'shape' : 'shapes'}
+              {layer.measure === 'count' ? 'Count' : layer.measure === 'band' || layer.kind === 'line' ? 'Length' : 'Area'}{' '}
+              · {count} {count === 1 ? 'shape' : 'shapes'}
             </span>
           </p>
         </div>

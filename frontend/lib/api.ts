@@ -1,4 +1,4 @@
-import type { ExtractionDocument } from './annotations/extraction-import';
+import type { TakeoffDocument } from './annotations/extraction-import';
 
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -14,7 +14,7 @@ export type JobRecord = {
   attempts: number;
   completedAt?: string;
   error?: string;
-  result?: ExtractionDocument;
+  result?: TakeoffDocument;
 };
 
 export type StartExtractionResponse = {

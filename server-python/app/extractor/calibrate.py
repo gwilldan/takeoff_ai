@@ -34,6 +34,8 @@ MM_PER_PT = 25.4 / 72
 # Dimension strings: 2400, 7,500 (thousands), 3.25 or 3,25 (metres or cm).
 DIMENSION = re.compile(r"^(\d{1,3}(?:,\d{3})+|\d{2,6}|\d{1,3}[.,]\d{1,3})$")
 MAX_DIMENSIONS = 200
+# Strings whose centres are within this distance across a chain share its row.
+CHAIN_ROW_TOLERANCE_PT = 1.5
 
 # Ink for dimension lines: anything with colour or darkness (min channel),
 # so red and blue dimension lines count and pale room fills do not.
@@ -54,9 +56,6 @@ SUPPLY = (5, 0.3)
 OVERRULE = (6, 0.4)
 # A stated scale within this share of the measured one is confirmed.
 CONFIRM_TOLERANCE = 0.06
-# To overrule a stated scale the evidence has to be stronger.
-OVERRULE_AGREEING = 6
-OVERRULE_SHARE = 0.4
 
 
 @dataclass
@@ -160,14 +159,46 @@ def _vector_length(segments: np.ndarray, x0: float, y0: float, x1: float, y1: fl
     return float(right.min() - left.max())
 
 
-def _readings(cache) -> list[float]:
-    """Millimetres-per-point implied by each dimension string, in its own (unknown) unit."""
+def _sources(cache) -> list[tuple[str, list[float]]]:
+    """
+    Millimetres-per-point readings, in the drawing's own (unknown) unit, from
+    each independent source: the dimension lines, then the dimension chains.
+    """
     spans = [(s, v) for s in cache.text_spans if (v := _value(s["text"]))][:MAX_DIMENSIONS]
     if not spans:
         return []
-    if len(cache.line_segments) >= len(spans):
-        return _vector_readings(cache, spans)
-    return _pixel_readings(cache, spans)
+    lines = _vector_readings(cache, spans) if len(cache.line_segments) >= len(spans) else _pixel_readings(cache, spans)
+    return [("printed dimensions", lines), ("dimension chains", _chain_readings(spans))]
+
+
+def _chain_readings(spans) -> list[float]:
+    """
+    Readings from dimension chains, without finding a single line. Each
+    string is centred on its own span, so the distance between the centres of
+    two neighbours in a chain is half the sum of their values. This needs only
+    the text, so it holds on scans where the lines are too faint or broken to
+    measure. A pair counts only when the next pair along agrees with it: in a
+    real chain they do, while neighbours that belong to different chains, or
+    grid numbers sharing a row, do not. Agreement among equal values (a run of
+    riser heights, an evenly spaced grid) only shows the labels are evenly
+    spaced, so it does not count.
+    """
+    readings = []
+    for vertical in (False, True):
+        # (position across the chain, position along it, value), sorted into rows.
+        marks = sorted((s["cx"], s["cy"], v) if vertical else (s["cy"], s["cx"], v)
+                       for s, v in spans if ((s["y2"] - s["y"]) > 1.5 * (s["x2"] - s["x"])) == vertical)
+        row: list[tuple] = []
+        for mark in marks + [(math.inf, 0, 0)]:
+            if row and mark[0] - row[0][0] > CHAIN_ROW_TOLERANCE_PT:
+                row.sort(key=lambda m: m[1])
+                pairs = [((a[2] + b[2]) / 2 / (b[1] - a[1]), {a[2], b[2]}) for a, b in zip(row, row[1:]) if b[1] > a[1]]
+                readings += [r for i, (r, values) in enumerate(pairs)
+                             if any(abs(r - n) <= CLUSTER_TOLERANCE * r and len(values | other) > 1
+                                    for n, other in pairs[max(0, i - 1):i] + pairs[i + 1:i + 2])]
+                row = []
+            row.append(mark)
+    return readings
 
 
 def _vector_readings(cache, spans) -> list[float]:
@@ -223,31 +254,43 @@ def _nearest_standard(ratio: float) -> float:
 def check_scale(cache, profile: dict) -> Scale:
     said = profile.get("scale")
     stated = float(profile.get("scale_ratio") or 0) if said and said != "unknown" else None
-    stated_text = said if stated else f"1:{stated:g}" if stated else None
-    readings = _readings(cache)
-    total = len(readings)
-    per_pt, agreeing = _cluster(readings) if readings else (0.0, 0)
-    candidates = [per_pt * unit / MM_PER_PT for unit in UNITS_MM]
-
-    if stated and agreeing:
-        measured = min(candidates, key=lambda r: abs(math.log(r / stated)))
-        if abs(measured - stated) <= CONFIRM_TOLERANCE * stated and _enough(agreeing, total, CONFIRM):
-            return Scale(stated, stated_text, "high", "stated", agreeing,
-                         [f"Stated scale confirmed by {agreeing} of {total} printed dimensions"])
-        if abs(measured - stated) > CONFIRM_TOLERANCE * stated and _enough(agreeing, total, OVERRULE):
-            ratio = round(measured, 1)
-            return Scale(ratio, f"1:{ratio:g}", "medium", "dimensions", agreeing, [
-                f"The sheet says {stated_text} but {agreeing} of {total} printed dimensions measure 1:{ratio:g}; "
-                "the sheet appears to have been resized, so the measured scale is used"])
+    stated_text = said if stated else None
+    sources = _sources(cache)
+    for name, readings in sources:
+        if scale := _decide(name, readings, stated, stated_text):
+            return scale
+    total = len(sources[0][1]) if sources else 0
     if stated:
         return Scale(stated, stated_text, profile.get("confidence") or "medium", "stated", 0,
                      [f"Stated scale could not be checked against the {total} dimension(s) measured"])
+    return Scale(100.0, "1:100", "low", "assumed", 0,
+                 ["No scale stated and none measurable from the dimensions; 1:100 assumed — check before using quantities"])
 
-    if agreeing and _enough(agreeing, total, SUPPLY):
+
+def _decide(name: str, readings: list[float], stated: float | None, stated_text: str | None) -> Scale | None:
+    """The scale one source of readings settles on its own, or None when it is not conclusive."""
+    if not readings:
+        return None
+    total = len(readings)
+    per_pt, agreeing = _cluster(readings)
+    candidates = [per_pt * unit / MM_PER_PT for unit in UNITS_MM]
+
+    if stated:
+        measured = min(candidates, key=lambda r: abs(math.log(r / stated)))
+        if abs(measured - stated) <= CONFIRM_TOLERANCE * stated and _enough(agreeing, total, CONFIRM):
+            return Scale(stated, stated_text, "high", "stated", agreeing,
+                         [f"Stated scale confirmed by {agreeing} of {total} {name}"])
+        if abs(measured - stated) > CONFIRM_TOLERANCE * stated and _enough(agreeing, total, OVERRULE):
+            ratio = round(measured, 1)
+            return Scale(ratio, f"1:{ratio:g}", "medium", "dimensions", agreeing, [
+                f"The sheet says {stated_text} but {agreeing} of {total} {name} measure 1:{ratio:g}; "
+                "the sheet appears to have been resized, so the measured scale is used"])
+        return None
+
+    if _enough(agreeing, total, SUPPLY):
         # Millimetres unless centimetres or metres land clearly nearer a real scale.
         measured = min(candidates, key=lambda r: abs(math.log(r / _nearest_standard(r))) + (0 if r == candidates[0] else 0.05))
         ratio = round(measured, 1)
         return Scale(ratio, f"1:{ratio:g}", "medium", "dimensions", agreeing,
-                     [f"No scale stated; measured 1:{ratio:g} from {agreeing} of {total} printed dimensions"])
-    return Scale(100.0, "1:100", "low", "assumed", 0,
-                 ["No scale stated and none measurable from the dimensions; 1:100 assumed — check before using quantities"])
+                     [f"No scale stated; measured 1:{ratio:g} from {agreeing} of {total} {name}"])
+    return None

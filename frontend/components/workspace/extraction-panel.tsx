@@ -5,8 +5,7 @@ import type { JobRecord } from '../../lib/api';
 import {
   isRejected,
   layersFromExtraction,
-  skippedPages,
-  type ExtractionDocument
+  type TakeoffDocument
 } from '../../lib/annotations/extraction-import';
 
 export type ExtractionPanelProps = {
@@ -17,7 +16,7 @@ export type ExtractionPanelProps = {
   isRunning: boolean;
   notificationUrl: string;
   onNotificationUrlChange: (value: string) => void;
-  onImport: (result: ExtractionDocument) => void;
+  onImport: (result: TakeoffDocument) => void;
   importedAt: string | null;
   /** Page on screen, highlighted in the plan page list. */
   currentPage: number;
@@ -57,9 +56,11 @@ export function ExtractionPanel({
   }
 
   const rejected = isRejected(result);
-  const skipped = skippedPages(result);
+  const skipped = (result?.pages ?? []).filter((page) => !page.is_plan);
   const document = result?.document;
-  const planPages = (result?.pages ?? []).filter((page) => page.isPlan);
+  const planPages = (result?.pages ?? []).filter((page) => page.is_plan);
+  const metrics = result?.metrics;
+  const seconds = metrics?.seconds;
 
   return (
     <div className="absolute inset-y-0 right-0 z-40 flex w-[380px] flex-col border-l border-edge bg-panel shadow-[-8px_0_24px_-12px_rgba(0,0,0,0.25)]">
@@ -100,25 +101,35 @@ export function ExtractionPanel({
 
             {document ? (
               <p className="font-mono text-[11px] text-ink-soft">
-                {document.pagesProcessed !== undefined && result?.partial
-                  ? `Reading page ${document.pagesProcessed} of ${document.pageCount}`
-                  : `${document.planPageCount ?? 0} plan page${
-                      (document.planPageCount ?? 0) === 1 ? '' : 's'
-                    } of ${document.pageCount ?? 0}`}
+                {result?.status === 'running'
+                  ? `${document.pages_processed} of ${document.page_count} pages done`
+                  : `${document.plan_page_count} floor plan page${
+                      document.plan_page_count === 1 ? '' : 's'
+                    } of ${document.page_count}`}
               </p>
             ) : null}
 
-            {result?.totals && Object.keys(result.totals).length > 0 ? (
+            {metrics?.counts && Object.keys(metrics.counts).length > 0 ? (
               <div className="grid grid-cols-2 gap-1.5">
-                {Object.entries(result.totals).map(([layer, count]) => (
-                  <div key={layer} className="rounded-md bg-chrome px-2.5 py-2">
-                    <p className="font-mono text-sm text-ink">{count}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-ink-faint">
-                      {layer}
-                    </p>
+                {[
+                  ...Object.entries(metrics.counts).map(([name, count]) => [name, String(count)]),
+                  ['wall length', `${metrics.wall_length_m ?? 0} m`],
+                  ['room area', `${metrics.room_area_m2 ?? 0} m²`]
+                ].map(([name, value]) => (
+                  <div key={name} className="rounded-md bg-chrome px-2.5 py-2">
+                    <p className="font-mono text-sm text-ink">{value}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-ink-faint">{name}</p>
                   </div>
                 ))}
               </div>
+            ) : null}
+
+            {seconds?.takeoff_mean != null ? (
+              <p className="font-mono text-[10px] leading-relaxed text-ink-faint">
+                Classify {seconds.read_mean ?? '–'} s/page · takeoff {seconds.takeoff_mean} s/page (max{' '}
+                {seconds.takeoff_max} s)
+                {result?.timings?.elapsed_s != null ? ` · whole job ${result.timings.elapsed_s} s` : ''}
+              </p>
             ) : null}
 
             {componentCount > 0 ? (
@@ -144,18 +155,31 @@ export function ExtractionPanel({
                 <p className="pane-label">Plan pages</p>
                 <ul className="mt-1.5 space-y-1">
                   {planPages.map((page) => {
-                    const onScreen = page.pageNumber === currentPage;
-                    const counts = Object.entries(page.counts ?? {})
-                      .map(([layer, count]) => `${count} ${layer}`)
-                      .join(' · ');
+                    const pageNumber = page.page_index + 1;
+                    const onScreen = pageNumber === currentPage;
+                    const tally = new Map<string, number>();
+                    for (const detection of page.detections) {
+                      tally.set(detection.class_name, (tally.get(detection.class_name) ?? 0) + 1);
+                    }
+                    const counts = page.error
+                      ? page.error
+                      : page.image_size
+                        ? [...tally].map(([name, count]) => `${count} ${name}`).join(' · ') +
+                          (page.timings?.takeoff_s != null ? ` · ${page.timings.takeoff_s} s` : '')
+                        : 'Measuring…';
+                    // The scale the page was measured at: ours where it replaced their estimate.
+                    const scale =
+                      page.scale_used !== 'ours' && page.scale?.denominator
+                        ? `1:${Math.round(page.scale.denominator)}`
+                        : (page.scale_check?.text ?? 'unknown');
 
                     return (
-                      <li key={page.pageNumber}>
+                      <li key={pageNumber}>
                         <button
                           type="button"
-                          onClick={() => onGoToPage(page.pageNumber)}
+                          onClick={() => onGoToPage(pageNumber)}
                           aria-current={onScreen ? 'page' : undefined}
-                          title={`Go to page ${page.pageNumber}`}
+                          title={`Go to page ${pageNumber}`}
                           className={`w-full rounded-md border px-2 py-1.5 text-left text-[11px] transition-colors ${
                             onScreen
                               ? 'border-ink bg-chrome'
@@ -164,18 +188,16 @@ export function ExtractionPanel({
                         >
                           <span className="flex items-baseline justify-between gap-2">
                             <span className="text-ink">
-                              p{page.pageNumber}{' '}
-                              <span className="text-ink-faint">{page.planType}</span>
+                              p{pageNumber}{' '}
+                              <span className="text-ink-faint">{page.plan_type}</span>
                             </span>
-                            <span className="shrink-0 font-mono text-[10px] text-ink-soft">
-                              {page.scale?.text ?? 'unknown'}
-                            </span>
+                            <span className="shrink-0 font-mono text-[10px] text-ink-soft">{scale}</span>
                           </span>
-                          {counts ? (
-                            <span className="mt-0.5 block font-mono text-[10px] text-ink-faint">
-                              {counts}
-                            </span>
-                          ) : null}
+                          <span
+                            className={`mt-0.5 block font-mono text-[10px] ${page.error ? 'text-red-700' : 'text-ink-faint'}`}
+                          >
+                            {counts}
+                          </span>
                         </button>
                       </li>
                     );
@@ -191,8 +213,8 @@ export function ExtractionPanel({
                 </summary>
                 <ul className="border-t border-edge px-2.5 py-2">
                   {skipped.map((page) => (
-                    <li key={page.pageNumber} className="text-[10px] leading-relaxed text-ink-faint">
-                      p{page.pageNumber} — {page.skippedReason}
+                    <li key={page.page_index} className="text-[10px] leading-relaxed text-ink-faint">
+                      p{page.page_index + 1} — {page.skipped_reason}
                     </li>
                   ))}
                 </ul>

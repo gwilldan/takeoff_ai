@@ -41,6 +41,8 @@ services:
     environment:
       <<: *app-env
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      QUANTTAKEOFF_API_KEY: ${QUANTTAKEOFF_API_KEY}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.7-plus}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-qwen3.7-plus}

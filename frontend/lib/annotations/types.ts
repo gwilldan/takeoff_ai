@@ -21,12 +21,14 @@ export type Shape = {
    * through from the extraction so a component can be found on the paper.
    */
   reference?: string;
-  /** What the extraction called this: "wall", "door", "window", "column", "room". */
+  /** What the extraction called this: "wall", "door", "window", "room". */
   componentType?: string;
-  /** Grid reference of the element, or of each end for a wall run. */
-  gridRef?: string;
   /** Human name where the drawing gives one, e.g. a room's "BEDROOM". */
   name?: string;
+  /** The extraction's confidence, 0–1. */
+  score?: number;
+  /** The extraction flagged this for a person to check. */
+  needsReview?: boolean;
 };
 
 /**
@@ -36,6 +38,13 @@ export type Shape = {
  */
 export type LayerSource = 'user' | 'extraction';
 
+/**
+ * What a layer's total adds up. By default a line layer totals length and an
+ * area layer area; `count` counts its shapes (doors, windows) and `band`
+ * totals the long side of each band (a wall's length).
+ */
+export type LayerMeasure = 'count' | 'band';
+
 export type Layer = {
   id: string;
   name: string;
@@ -44,6 +53,11 @@ export type Layer = {
   visible: boolean;
   shapes: Shape[];
   source?: LayerSource;
+  measure?: LayerMeasure;
+  /** Area fill opacity; extracted layers carry the annotator's. */
+  fillOpacity?: number;
+  /** Label each shape "class score" at this size in PDF points. */
+  labelSize?: number;
 };
 
 /** Scale calibration for the whole document. */

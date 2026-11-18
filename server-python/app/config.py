@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     llm_thinking: bool = False
     llm_vision_model: str | None = None
 
+    quanttakeoff_api_key: str = ""
+    quanttakeoff_base_url: str = "https://app.quanttakeoff.com/v1.1"
+    # Where QuantTakeoff can reach this API for its completion callback. Empty
+    # means no callback is requested and finished takeoffs are found by polling.
+    public_api_url: str = ""
+    takeoff_poll_interval_s: int = 10
+    takeoff_timeout_s: int = 30 * 60
+
     ocr_language: str = "eng"
     ocr_dpi: int = 300
 

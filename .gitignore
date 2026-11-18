@@ -14,3 +14,7 @@ env/
 
 output
 files
+
+annotate-pdf-from-json/input/*
+annotate-pdf-from-json/output/*
+!annotate-pdf-from-json/input/output.example.json

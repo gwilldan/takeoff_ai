@@ -1,187 +1,148 @@
-import type { Layer, PageGuides, Point, Shape, ShapeKind } from './types';
+import type { Calibration, Layer, LayerMeasure, PageGuides, Point, Shape } from './types';
 
 /**
- * Maps a worker extraction result onto annotation layers.
+ * Maps an extraction result onto annotation layers.
  *
- * The worker reports coordinates in PDF points with a top-left origin, which is
- * the same space the overlay draws in, so points are copied across untouched —
- * no transform, no scaling. If annotations ever land off the drawing, that
- * assumption is the first thing to check.
+ * The result is QuantTakeoff's takeoff format with our fields beside theirs.
+ * Detections are in page pixels of an image of `image_size`; each point is
+ * scaled onto the PDF page by `page_size_pt / image_size`, exactly as the
+ * annotate-pdf-from-json annotator does, so shapes land where it draws them.
  */
 
-export type ExtractedComponent = {
+export type Detection = {
   id: string;
-  layer: string;
-  type: string;
-  polyline: number[][];
-  confidence?: string;
-  reference?: string | null;
-  gridRef?: string | null;
-  gridRefFrom?: string | null;
-  gridRefTo?: string | null;
-  lengthMm?: number;
-  widthMm?: number;
-  thicknessMm?: number;
-  areaM2?: number | null;
-  measuredAreaM2?: number | null;
-  hostWallId?: string | null;
-  roomIds?: string[];
-  exterior?: boolean;
-  source?: 'walls' | 'label';
+  class_name: string;
+  score: number;
+  bbox: number[];
+  polygon: number[][];
+  /** A room's name, or a door or window's mark ("Dr-02"), as printed. */
   name?: string | null;
-  notes?: string[];
-  /** Ids into the page's `nodes`: the shared corner points this outline is drawn through. */
-  nodes?: string[];
+  needs_review?: boolean | null;
+  area_m2?: number | null;
+  wall_type?: { thickness_mm: number; external?: boolean | null } | null;
+  /** Ours: a wall's length from its band and the page scale. */
+  length_m?: number;
+  /** Ours: the room's area at our scale, where ours replaced QuantTakeoff's estimate. */
+  area_m2_checked?: number;
 };
 
-export type ExtractedNode = { id: string; point: number[]; gridRef?: string | null };
-
-export type ExtractedPage = {
-  pageNumber: number;
-  isPlan: boolean;
-  planType?: string;
-  skippedReason?: string;
-  pageSize?: { width: number; height: number };
-  scale?: { text: string; ratio: number; confidence?: string; source?: string; dimensionsChecked?: number };
+export type ResultPage = {
+  page_index: number;
+  image_size?: { width: number; height: number };
+  scale?: { meters_per_pixel: number; denominator?: number | null; source?: string };
+  detections: Detection[];
+  // Ours.
+  is_plan: boolean;
+  plan_type?: string;
+  skipped_reason?: string;
+  error?: string;
+  page_size_pt?: { width: number; height: number };
+  scale_check?: { text: string; ratio: number; confidence?: string; source?: string };
   grid?: { columns: { ref: string; x: number }[]; rows: { ref: string; y: number }[] };
-  nodes?: ExtractedNode[];
-  components?: ExtractedComponent[];
-  counts?: Record<string, number>;
-  notes?: string[];
+  metres_per_px?: number | null;
+  scale_used?: 'quanttakeoff' | 'ours' | null;
+  timings?: { read_s?: number; takeoff_s?: number };
 };
 
-export type ExtractionDocument = {
+export type TakeoffDocument = {
+  id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  pages: ResultPage[];
+  metrics?: {
+    counts?: Record<string, number>;
+    wall_length_m?: number;
+    room_area_m2?: number;
+    seconds?: { read_mean?: number | null; takeoff_mean?: number | null; takeoff_max?: number | null };
+  };
+  review?: { doors: number; windows: number };
+  error?: string | null;
+  // Ours.
+  document: { page_count: number; pages_processed: number; plan_page_count: number };
   accepted?: boolean;
-  partial?: boolean;
-  document?: { pageCount?: number; pagesProcessed?: number; planPageCount?: number; pdfPath?: string };
-  pages?: ExtractedPage[];
-  totals?: Record<string, number>;
   rejection?: { reason: string; message: string };
-  tokenUsage?: { totals?: Record<string, number> };
-  extractedAt?: string;
+  timings?: { elapsed_s?: number };
 };
 
 /**
- * Layer presentation per component class.
- *
- * Openings are lines because that is what they are geometrically — a span across
- * the opening whose length is its width. Keeping them as lines means the overlay
- * renderer needs no new shape type.
+ * Layer presentation per detection class: the annotator's colours, fill
+ * opacities and label sizes. Walls carry no label; their length is the total.
  */
-const LAYER_STYLES: Record<string, { label: string; color: string; kind: ShapeKind }> = {
-  // A wall arrives as its band — four corners giving length and thickness.
-  walls: { label: 'Walls', color: '#2563EB', kind: 'area' },
-  doors: { label: 'Doors', color: '#EA580C', kind: 'line' },
-  windows: { label: 'Windows', color: '#0891B2', kind: 'line' },
-  columns: { label: 'Columns', color: '#DB2777', kind: 'area' },
-  rooms: { label: 'Rooms', color: '#16A34A', kind: 'area' }
+const LAYER_STYLES: Record<string, { label: string; color: string; fillOpacity: number; labelSize?: number; measure?: LayerMeasure }> = {
+  rooms: { label: 'Rooms', color: '#17A34A', fillOpacity: 0.25, labelSize: 4 },
+  walls: { label: 'Walls', color: '#2663EB', fillOpacity: 0.45, measure: 'band' },
+  windows: { label: 'Windows', color: '#0891B3', fillOpacity: 0.7, labelSize: 3, measure: 'count' },
+  doors: { label: 'Doors', color: '#EB590D', fillOpacity: 0.7, labelSize: 3, measure: 'count' }
 };
 
-const FALLBACK_STYLE = { color: '#7C3AED', kind: 'line' as ShapeKind };
+const FALLBACK_STYLE = { color: '#7D3BED', fillOpacity: 0.45, labelSize: 3, measure: 'count' as LayerMeasure };
 
-/**
- * Paint order, back to front: the overlay draws layers in list order and
- * hit-tests the reverse, so rooms sit behind the walls that bound them and
- * doors and windows sit on top where they can always be seen and picked.
- */
-const LAYER_ORDER = ['rooms', 'walls', 'columns', 'doors', 'windows'];
+/** Paint order, back to front, as the annotator draws: rooms, walls, windows, doors. */
+const LAYER_ORDER = ['rooms', 'walls', 'windows', 'doors'];
 
-function toPoints(polyline: number[][]): Point[] {
-  return polyline
-    .filter((pair) => pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
-    .map((pair) => ({ x: pair[0]!, y: pair[1]! }));
+const LAYER_FOR_CLASS: Record<string, string> = { space: 'rooms', room: 'rooms', wall: 'walls', door: 'doors', window: 'windows' };
+
+function layerFor(className: string): string {
+  return LAYER_FOR_CLASS[className] ?? `${className}s`;
 }
 
-function gridRefFor(component: ExtractedComponent): string | undefined {
-  if (component.gridRef) {
-    return component.gridRef;
-  }
-
-  if (component.gridRefFrom && component.gridRefTo) {
-    return `${component.gridRefFrom} → ${component.gridRefTo}`;
-  }
-
-  return component.gridRefFrom ?? undefined;
-}
-
-function toShape(component: ExtractedComponent, pageNumber: number, kind: ShapeKind): Shape | null {
-  const points = toPoints(component.polyline ?? []);
-  const minimum = kind === 'area' ? 3 : 2;
-
-  if (points.length < minimum) {
+/** Points per page pixel, or null when a page has no takeoff geometry. */
+function pointsPerPixel(page: ResultPage): { x: number; y: number } | null {
+  if (!page.image_size || !page.page_size_pt) {
     return null;
   }
 
-  const shape: Shape = {
-    id: `${pageNumber}:${component.id}`,
-    kind,
+  return {
+    x: page.page_size_pt.width / page.image_size.width,
+    y: page.page_size_pt.height / page.image_size.height
+  };
+}
+
+function toShape(detection: Detection, pageNumber: number, ppp: { x: number; y: number }): Shape | null {
+  const points: Point[] = detection.polygon
+    .filter((pair) => pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
+    .map(([x, y]) => ({ x: x! * ppp.x, y: y! * ppp.y }));
+
+  if (points.length < 3) {
+    return null;
+  }
+
+  return {
+    id: `${pageNumber}:${detection.id}`,
+    kind: 'area',
     pageNumber,
     points,
-    componentType: component.type
+    componentType: detection.class_name,
+    score: detection.score,
+    // A room's name is always shown; a door or window's mark on selection.
+    ...(detection.name ? (detection.class_name === 'door' || detection.class_name === 'window'
+      ? { reference: detection.name }
+      : { name: detection.name }) : {}),
+    ...(detection.needs_review ? { needsReview: true } : {})
   };
-
-  if (component.reference) {
-    shape.reference = component.reference;
-  }
-
-  if (component.name) {
-    shape.name = component.name;
-  }
-
-  const gridRef = gridRefFor(component);
-  if (gridRef) {
-    shape.gridRef = gridRef;
-  }
-
-  return shape;
 }
 
 /**
- * Build one layer per component class across every plan page in the result.
- *
- * Layers span pages — a shape carries its own page number, so a single "Walls"
- * layer holds the walls of the whole set and its total is the document total.
+ * One layer per detection class across every plan page. Layers span pages — a
+ * shape carries its own page number — so a layer's total can be read for the
+ * page on screen or for the whole set.
  */
-export type ImportOptions = {
-  /**
-   * Component classes to import. Omit to take everything the extraction found.
-   *
-   * The workspace passes the classes it can edit and total: rooms, walls,
-   * doors and windows.
-   */
-  only?: string[];
-};
-
-export function layersFromExtraction(
-  result: ExtractionDocument | null | undefined,
-  options: ImportOptions = {}
-): Layer[] {
+export function layersFromExtraction(result: TakeoffDocument | null | undefined): Layer[] {
   const byLayer = new Map<string, Shape[]>();
-  const allowed = options.only ? new Set(options.only) : null;
 
   for (const page of result?.pages ?? []) {
-    if (!page.isPlan) {
+    const ppp = pointsPerPixel(page);
+    if (!page.is_plan || !ppp) {
       continue;
     }
 
-    for (const component of page.components ?? []) {
-      if (allowed && !allowed.has(component.layer)) {
-        continue;
-      }
-
-      const style = LAYER_STYLES[component.layer] ?? FALLBACK_STYLE;
-      const shape = toShape(component, page.pageNumber, style.kind);
-
+    for (const detection of page.detections) {
+      const shape = toShape(detection, page.page_index + 1, ppp);
       if (!shape) {
         continue;
       }
 
-      const existing = byLayer.get(component.layer);
-      if (existing) {
-        existing.push(shape);
-      } else {
-        byLayer.set(component.layer, [shape]);
-      }
+      const name = layerFor(detection.class_name);
+      byLayer.set(name, [...(byLayer.get(name) ?? []), shape]);
     }
   }
 
@@ -195,62 +156,55 @@ export function layersFromExtraction(
       id: `extraction:${name}`,
       name: LAYER_STYLES[name]?.label ?? name.replace(/^./, (c) => c.toUpperCase()),
       color: style.color,
-      kind: style.kind,
+      kind: 'area' as const,
       visible: true,
       shapes: byLayer.get(name) ?? [],
-      source: 'extraction' as const
+      source: 'extraction' as const,
+      fillOpacity: style.fillOpacity,
+      ...(style.labelSize ? { labelSize: style.labelSize } : {}),
+      ...(style.measure ? { measure: style.measure } : {})
     };
   });
 }
 
-/** True when the worker looked at the document and found no measurable plan. */
-export function isRejected(result: ExtractionDocument | null | undefined): boolean {
+/** True when the worker looked at the document and found no floor plan. */
+export function isRejected(result: TakeoffDocument | null | undefined): boolean {
   return result?.accepted === false && Boolean(result?.rejection);
 }
 
-/** Pages the worker examined and skipped, for reporting alongside the results. */
-export function skippedPages(result: ExtractionDocument | null | undefined): ExtractedPage[] {
-  return (result?.pages ?? []).filter((page) => !page.isPlan);
-}
-
 /**
- * The drawing scale to adopt from an extraction.
- *
- * Taken from the first plan page that reports a usable ratio: a set is normally
- * drawn at one scale, and a wrong scale is more obvious than no scale.
+ * The drawing scale to adopt: the first plan page's metres per pixel, turned
+ * into PDF points per real millimetre. A set is normally drawn at one scale.
  */
-export function calibrationFromExtraction(
-  result: ExtractionDocument | null | undefined
-): { pointsPerMillimetre: number } | null {
+export function calibrationFromExtraction(result: TakeoffDocument | null | undefined): Calibration | null {
   for (const page of result?.pages ?? []) {
-    const ratio = page.scale?.ratio;
+    const ppp = pointsPerPixel(page);
 
-    if (page.isPlan && typeof ratio === 'number' && ratio > 0) {
-      // One PDF point is 25.4/72 mm of paper, covering `ratio` mm of real world.
-      return { pointsPerMillimetre: 1 / ((25.4 / 72) * ratio) };
+    if (page.is_plan && ppp && page.metres_per_px) {
+      // One point covers 1/ppp pixels, each `metres_per_px` of real world.
+      return { pointsPerMillimetre: ppp.x / (page.metres_per_px * 1000) };
     }
   }
 
   return null;
 }
 
-/** Snap targets per page: grid axes and extracted corner nodes. */
-export function guidesFromExtraction(
-  result: ExtractionDocument | null | undefined
-): Record<number, PageGuides> {
+/** Snap targets per page: the drawing's grid axes and the corners of its detections. */
+export function guidesFromExtraction(result: TakeoffDocument | null | undefined): Record<number, PageGuides> {
   const guides: Record<number, PageGuides> = {};
 
   for (const page of result?.pages ?? []) {
-    if (!page.isPlan) {
+    const ppp = pointsPerPixel(page);
+    if (!page.is_plan || !ppp) {
       continue;
     }
 
-    guides[page.pageNumber] = {
-      xs: (page.grid?.columns ?? []).map((axis) => axis.x),
-      ys: (page.grid?.rows ?? []).map((axis) => axis.y),
-      points: (page.nodes ?? [])
-        .filter((node) => node.point.length >= 2)
-        .map((node) => ({ x: node.point[0]!, y: node.point[1]! }))
+    guides[page.page_index + 1] = {
+      xs: (page.grid?.columns ?? []).map((axis) => axis.x * ppp.x),
+      ys: (page.grid?.rows ?? []).map((axis) => axis.y * ppp.y),
+      points: page.detections
+        .filter((d) => d.class_name === 'wall')
+        .flatMap((d) => d.polygon.map(([x, y]) => ({ x: x! * ppp.x, y: y! * ppp.y })))
     };
   }
 

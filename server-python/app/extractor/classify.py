@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 import re
 
-import numpy as np
-
 from app.config import settings
 from app.extractor.cache import ExtractionCache
 from app.extractor.llm import TokenTracker, chat_with_tracking, parse_json_response
@@ -56,12 +54,6 @@ NOT plans: sections, elevations, details, door and window schedules,
 specifications, bills of quantities, revision tables, drawing registers, title
 or cover sheets, 3D views, photographs.
 
-A sheet may hold several drawings. For a plan page, list the box around each
-floor plan drawing in "plan_regions" (include its walls, dimensions and grid
-bubbles; exclude the title block, notes, legends, tables and any section,
-elevation or detail drawn beside it). Boxes are [x0, y0, x1, y1] on a 0–1000
-scale of the page width and height, origin top-left.
-
 Return a single JSON object, no markdown:
 {
   "is_plan": true,
@@ -69,16 +61,10 @@ Return a single JSON object, no markdown:
   "not_plan_reason": "only when is_plan is false",
   "scale": "1:100 or unknown",
   "scale_ratio": 100,
-  "plan_regions": [[60, 40, 520, 700]],
   "confidence": "high | medium | low",
   "notes": ["assumptions or ambiguities"]
 }
 """
-
-# A plan region is widened by this share of the page on every side, so a box
-# drawn tight against the outer wall never cuts it off.
-REGION_MARGIN = 0.02
-
 
 def detect_scale(text: str) -> tuple[str | None, int | None]:
     match = SCALE.search(text)
@@ -153,25 +139,3 @@ def classify_page(cache: ExtractionCache, tracker: TokenTracker) -> dict:
         profile["not_plan_reason"] = f"{profile['plan_type'].replace('_', ' ')} cannot be measured in plan"
     return profile
 
-
-def plan_region_mask(regions, cache: ExtractionCache, raster) -> np.ndarray | None:
-    """
-    Pixel mask of the plan viewports the model reported, or None (whole page)
-    when it reported none usable.
-    """
-    boxes = []
-    for box in regions or []:
-        try:
-            x0, y0, x1, y1 = (float(v) / 1000 for v in box)
-        except (TypeError, ValueError):
-            continue
-        if 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1 and (x1 - x0) * (y1 - y0) >= 0.01:
-            boxes.append((x0 - REGION_MARGIN, y0 - REGION_MARGIN, x1 + REGION_MARGIN, y1 + REGION_MARGIN))
-    if not boxes:
-        return None
-
-    mask = np.zeros_like(raster.ink)
-    height, width = mask.shape
-    for x0, y0, x1, y1 in boxes:
-        mask[max(0, int(y0 * height)):int(y1 * height), max(0, int(x0 * width)):int(x1 * width)] = 1
-    return mask

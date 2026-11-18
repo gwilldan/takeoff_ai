@@ -1,6 +1,7 @@
 'use client';
 
 import type { ToolId } from '../../lib/annotations/types';
+import { HistoryMenu } from './history-menu';
 
 type ToolButton = {
   id: ToolId;
@@ -62,6 +63,10 @@ export function ViewerToolbar({
           </button>
         ))}
       </div>
+
+      <span className="h-5 w-px bg-edge" aria-hidden />
+
+      <HistoryMenu />
 
       <span className="h-5 w-px bg-edge" aria-hidden />
 

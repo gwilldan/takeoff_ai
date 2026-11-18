@@ -28,9 +28,6 @@ BAND_TOLERANCE_PTS = 4.0
 # Below this many aligned marks it is not a grid.
 MIN_MARKS_PER_AXIS = 3
 
-# How close a point must be to an axis to be called "on" it.
-DEFAULT_REF_TOLERANCE_PTS = 10.0
-
 
 @dataclass
 class GridAxis:
@@ -42,10 +39,6 @@ class GridAxis:
 class DrawingGrid:
     columns: list[GridAxis] = field(default_factory=list)
     rows: list[GridAxis] = field(default_factory=list)
-
-    @property
-    def is_present(self) -> bool:
-        return bool(self.columns or self.rows)
 
     def to_dict(self) -> dict:
         return {
@@ -130,39 +123,3 @@ def detect_grid(cache) -> DrawingGrid:
 
     return DrawingGrid(columns=columns, rows=rows)
 
-
-def _axis_ref(axes: list[GridAxis], value: float, tolerance: float) -> str | None:
-    """Nearest axis reference, or a bracketing pair when the point is between."""
-    if not axes:
-        return None
-
-    nearest = min(axes, key=lambda a: abs(a.position - value))
-    if abs(nearest.position - value) <= tolerance:
-        return nearest.ref
-
-    before = [a for a in axes if a.position < value]
-    after = [a for a in axes if a.position > value]
-
-    if before and after:
-        return f"{before[-1].ref}~{after[0].ref}"
-
-    return nearest.ref
-
-
-def grid_ref_for_point(
-    grid: DrawingGrid,
-    x: float,
-    y: float,
-    tolerance_pts: float = DEFAULT_REF_TOLERANCE_PTS,
-) -> str | None:
-    """
-    Describe a point by the drawing's grid, e.g. "A/1", or "A~B/1~2" when it
-    falls between axes. Returns None when the drawing has no detectable grid.
-    """
-    column = _axis_ref(grid.columns, x, tolerance_pts)
-    row = _axis_ref(grid.rows, y, tolerance_pts)
-
-    if column and row:
-        return f"{column}/{row}"
-
-    return column or row
