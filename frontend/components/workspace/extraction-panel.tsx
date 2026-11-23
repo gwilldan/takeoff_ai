@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
-import type { JobRecord } from '../../lib/api';
+import { useMemo, useState } from 'react';
+import { saveTrainingLabels, type JobRecord } from '../../lib/api';
 import {
   isRejected,
   layersFromExtraction,
+  trainingPagesFromLayers,
   type TakeoffDocument
 } from '../../lib/annotations/extraction-import';
+import { useAnnotations } from '../../lib/annotations/store';
 
 export type ExtractionPanelProps = {
   open: boolean;
@@ -44,8 +46,27 @@ export function ExtractionPanel({
   onGoToPage
 }: ExtractionPanelProps) {
   const result = job?.result;
+  const { state } = useAnnotations();
+  const [training, setTraining] = useState<{ busy: boolean; note: string }>({ busy: false, note: '' });
 
   const layers = useMemo(() => layersFromExtraction(result), [result]);
+
+  const saveForTraining = async () => {
+    if (!job) {
+      return;
+    }
+
+    setTraining({ busy: true, note: '' });
+    try {
+      const saved = await saveTrainingLabels(job.id, trainingPagesFromLayers(result, state.layers));
+      setTraining({
+        busy: false,
+        note: `Saved ${saved.detections} shapes on ${saved.pages} page${saved.pages === 1 ? '' : 's'} for training.`
+      });
+    } catch (error) {
+      setTraining({ busy: false, note: error instanceof Error ? error.message : 'Saving for training failed.' });
+    }
+  };
   const componentCount = useMemo(
     () => layers.reduce((total, layer) => total + layer.shapes.length, 0),
     [layers]
@@ -148,6 +169,23 @@ export function ExtractionPanel({
                 Imported at {new Date(importedAt).toLocaleTimeString()}. Re-importing
                 replaces the extracted layers and leaves your own untouched.
               </p>
+            ) : null}
+
+            {importedAt && job.status === 'completed' ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={saveForTraining}
+                  disabled={training.busy}
+                  className="w-full rounded-md border border-ink px-3 py-2 text-xs font-medium text-ink transition-colors hover:bg-chrome disabled:opacity-50"
+                >
+                  {training.busy ? 'Saving…' : 'Save corrections for training'}
+                </button>
+                <p className="text-[10px] leading-relaxed text-ink-faint">
+                  {training.note ||
+                    'Correct the extracted layers first: what you save here is what the model learns. Saving again replaces it.'}
+                </p>
+              </div>
             ) : null}
 
             {planPages.length > 0 ? (

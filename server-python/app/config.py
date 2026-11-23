@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     ocr_dpi: int = 300
 
     extraction_output_dir: str = "/data/output"
+    # Where plans and their corrections are kept to train the takeoff model
+    # (the model's data folder). Empty keeps nothing.
+    training_data_dir: str = ""
 
     @property
     def frontend_origins(self) -> list[str]:

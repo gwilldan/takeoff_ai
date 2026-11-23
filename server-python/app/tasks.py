@@ -31,6 +31,7 @@ from app.jobs import drop_pending_takeoff, get_job, get_pending_takeoff, save_pe
 from app.models import DocumentProgress, JobRecord, TakeoffResult, utcnow
 from app.notifier import notify_completion
 from app.output_writer import save_extraction_output
+from app.training import save_draft
 from app.storage import resolve_document
 
 log = logging.getLogger(__name__)
@@ -185,5 +186,9 @@ def _publish(job_id: str, page: dict[str, Any], **takeoff: Any) -> None:
     log.info("[%s] page %d published", job_id, page["page_index"] + 1)
     if closed and job is not None and job.result is not None:
         save_extraction_output(job_id, job.result)
+        try:
+            save_draft(job)
+        except OSError as exc:  # keeping a training copy must never fail the job
+            log.warning("[%s] training draft not saved: %s", job_id, exc)
         notify_completion(job)
 

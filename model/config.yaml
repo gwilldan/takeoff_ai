@@ -1,0 +1,73 @@
+# Floor-plan segmentation model. Every command reads this file; pass --config to use another.
+
+# Pixel classes, in this order. Index 0 is background. Class names match the
+# takeoff JSON format (QuantTakeoff's), so labels and predictions read the same.
+classes: [background, space, wall, window, door, column, stair]
+
+render:
+  # Pages are rendered so one pixel covers this many real-world millimetres
+  # whenever the drawing scale is known: a 225 mm wall is then ~15 px thick on
+  # every drawing, whatever its paper size or scale. This is the single biggest
+  # accuracy lever for drawings from many offices.
+  mm_per_px: 15
+  # When the scale is unknown, render at this DPI instead.
+  fallback_dpi: 150
+  min_dpi: 72
+  max_dpi: 300
+  # Image sources (scans, photos) carry no DPI; they are taken to be at this one.
+  image_dpi: 300
+
+data:
+  root: data          # sources/, labels/ and tiles/ live here
+  tile: 1024          # prepared tile size, px
+  overlap: 256
+  val_fraction: 0.15  # share of documents held out for validation, chosen by name
+
+model:
+  arch: Unet                       # any segmentation_models_pytorch architecture
+  encoder: tu-convnext_small       # timm ConvNeXt via smp; use tu-convnext_tiny on small GPUs
+  encoder_weights: imagenet
+
+train:
+  crop: 768
+  scale: [0.45, 1.6]   # random zoom, so drawings a little off scale (and the locate pass) still read
+  epochs: 60
+  samples_per_epoch: 4000
+  batch_size: 8
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 2
+  workers: 6
+  amp: true            # mixed precision on CUDA
+  out: runs
+
+predict:
+  tile: 1024
+  overlap: 256
+  batch_size: 4
+  tta: true            # average with a mirrored pass: slower, a little more accurate
+  # Find the drawings on the sheet first, with the network at reduced
+  # resolution, and predict only those: title blocks, notes, legends and
+  # margins are left out. Remove this block to predict whole pages.
+  locate:
+    scale: 0.5           # of the prediction resolution; training covers it (train.scale)
+    join_mm: 1500        # walls this close belong to one drawing
+    min_plan_m2: 20      # a drawing encloses at least this much
+    min_wall_m2: 2       # and holds at least this much wall (10 m of 200 mm wall)
+    pad_mm: 1500         # margin kept around it, for dimensions and names
+
+# Post-processing, in real millimetres (converted through the scale when known,
+# else through fallback_dpi at 1:100). Openings are gaps in the predicted walls
+# and rooms the spaces those walls enclose; the network decides what each is.
+vectorize:
+  min_wall_run_mm: 400
+  min_opening_mm: 450         # narrower gaps in a wall are breaks in the prediction
+  max_opening_mm: 6000        # wider ones are not openings
+  max_door_mm: 2400           # wider openings are windows or plain openings
+  opening_evidence: 0.5       # pixels labelled door or window per gap pixel to call it one
+  seal_gap_mm: 2500           # plain openings up to this wide still close a room off
+  seal_break_mm: 150          # breaks in a predicted wall up to this long are bridged
+  min_room_m2: 1.0
+  room_min_probability: 0.5   # mean room probability for an enclosed space to count
+  min_column_mm2: 10000
+  min_stair_m2: 1.0

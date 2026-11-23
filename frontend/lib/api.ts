@@ -1,4 +1,4 @@
-import type { TakeoffDocument } from './annotations/extraction-import';
+import type { TakeoffDocument, TrainingPage } from './annotations/extraction-import';
 
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -53,4 +53,23 @@ export async function fetchJob(jobId: string): Promise<JobRecord> {
   }
 
   return (await response.json()) as JobRecord;
+}
+
+/** Keep corrected layers as labels for training the takeoff model. */
+export async function saveTrainingLabels(
+  jobId: string,
+  pages: TrainingPage[]
+): Promise<{ saved: string; pages: number; detections: number }> {
+  const response = await fetch(`${apiBaseUrl}/jobs/${jobId}/training`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pages })
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Saving for training failed (${response.status})`);
+  }
+
+  return (await response.json()) as { saved: string; pages: number; detections: number };
 }

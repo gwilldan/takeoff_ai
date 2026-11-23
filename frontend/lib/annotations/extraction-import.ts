@@ -210,3 +210,55 @@ export function guidesFromExtraction(result: TakeoffDocument | null | undefined)
 
   return guides;
 }
+
+export type TrainingPage = {
+  page_index: number;
+  detections: { class_name: string; polygon: number[][]; name?: string }[];
+};
+
+/** The detection class an extracted layer holds: "extraction:rooms" → "space", "extraction:columns" → "column". */
+function classForLayer(layerId: string): string | undefined {
+  if (!layerId.startsWith('extraction:')) {
+    return undefined;
+  }
+
+  const layer = layerId.slice('extraction:'.length);
+  return Object.entries(LAYER_FOR_CLASS).find(([cls, name]) => name === layer && cls !== 'room')?.[0] ?? layer.replace(/s$/, '');
+}
+
+/**
+ * The layers as training labels: every area shape with a class, from the
+ * extraction or drawn into an extracted layer, on each measured plan page.
+ * Polygons stay in PDF points; the server takes the page's size in points as
+ * the label's image size. A plan page left with no shapes is sent empty: it
+ * teaches the model that nothing is there.
+ */
+export function trainingPagesFromLayers(result: TakeoffDocument | null | undefined, layers: Layer[]): TrainingPage[] {
+  const pages = new Map<number, TrainingPage>();
+
+  for (const page of result?.pages ?? []) {
+    if (page.is_plan && page.image_size && page.page_size_pt && !page.error) {
+      pages.set(page.page_index + 1, { page_index: page.page_index, detections: [] });
+    }
+  }
+
+  for (const layer of layers) {
+    for (const shape of layer.shapes) {
+      // A shape drawn into an extracted layer takes that layer's class; the user's own layers are not labels.
+      const className = shape.componentType ?? classForLayer(layer.id);
+      const page = pages.get(shape.pageNumber);
+
+      if (!className || !page || shape.kind !== 'area' || shape.points.length < 3) {
+        continue;
+      }
+
+      page.detections.push({
+        class_name: className === 'room' ? 'space' : className,
+        polygon: shape.points.map((point) => [point.x, point.y]),
+        ...(shape.name ? { name: shape.name } : shape.reference ? { name: shape.reference } : {})
+      });
+    }
+  }
+
+  return [...pages.values()];
+}

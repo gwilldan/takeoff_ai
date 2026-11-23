@@ -5,6 +5,7 @@ x-app-env: &app-env
   REDIS_JOB_PREFIX: ${REDIS_JOB_PREFIX:-pdf:extract:job:}
   JOB_TTL_SECONDS: ${JOB_TTL_SECONDS:-604800}
   DOCUMENT_STORAGE_DIR: /data/uploads
+  TRAINING_DATA_DIR: /data/training
   QUEUE_NAME: ${QUEUE_NAME:-pdf-extract}
   QUEUE_ATTEMPTS: ${QUEUE_ATTEMPTS:-3}
   QUEUE_BACKOFF_DELAY_MS: ${QUEUE_BACKOFF_DELAY_MS:-2000}
@@ -30,6 +31,7 @@ services:
         condition: service_healthy
     volumes:
       - documents-data:/data/uploads
+      - training-data:/data/training
     restart: unless-stopped
 
   worker:
@@ -42,6 +44,8 @@ services:
       <<: *app-env
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       QUANTTAKEOFF_API_KEY: ${QUANTTAKEOFF_API_KEY}
+      # Point at a takeoff-model server to use your own model instead of QuantTakeoff.
+      QUANTTAKEOFF_BASE_URL: ${QUANTTAKEOFF_BASE_URL:-https://app.quanttakeoff.com/v1.1}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.7-plus}
@@ -52,6 +56,7 @@ services:
         condition: service_healthy
     volumes:
       - documents-data:/data/uploads
+      - training-data:/data/training
       - ../output:/data/output
     restart: unless-stopped
 
@@ -88,5 +93,6 @@ services:
 
 volumes:
   postgres-data:
+  training-data:
   redis-data:
   documents-data:

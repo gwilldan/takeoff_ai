@@ -242,3 +242,32 @@ def test_missing_document_fails_the_job_without_retry(client):
 def test_task_fails_fast_when_job_record_missing():
     with pytest.raises(tasks.UnrecoverableError):
         tasks.extract_document.run(job_id="ghost")
+
+
+def test_finished_job_is_kept_for_training(client, api, monkeypatch, tmp_path):
+    assert client.post("/jobs/nope/training", json={"pages": [{"page_index": 0, "detections": []}]}).status_code == 503
+    monkeypatch.setattr(settings, "training_data_dir", str(tmp_path))
+    body = _upload(client).json()
+    job_id, pdf = body["jobId"], body["documentPath"]
+    monkeypatch.setattr(tasks, "read_page", _read(plan_pages={1}))
+    tasks.extract_document.run(job_id=job_id)
+    for index in (0, 1):
+        tasks.extract_page.run(job_id, pdf, index)
+    with pytest.raises(Retry):
+        tasks.collect_takeoff.run("tk_1")
+    tasks.collect_takeoff.run("tk_1")
+
+    # Finishing leaves the drawing and the engine's plan pages as a draft, never as a label.
+    assert (tmp_path / "sources" / f"{job_id}.pdf").read_bytes() == Path(pdf).read_bytes()
+    draft = json.loads((tmp_path / "drafts" / f"{job_id}.json").read_text())
+    assert [p["page_index"] for p in draft["pages"]] == [1] and draft["pages"][0]["detections"][0]["class_name"] == "wall"
+    assert not (tmp_path / "labels").exists()
+
+    room = {"class_name": "space", "polygon": [[10, 10], [200, 10], [200, 100]], "name": "KITCHEN"}
+    assert client.post(f"/jobs/{job_id}/training", json={"pages": [{"page_index": 0, "detections": [room]}]}).status_code == 400
+    saved = client.post(f"/jobs/{job_id}/training", json={"pages": [{"page_index": 1, "detections": [room, {**room, "class_name": "note"}]}]})
+    assert saved.status_code == 201 and saved.json()["detections"] == 1
+    label = json.loads((tmp_path / "labels" / f"{job_id}.json").read_text())
+    page = label["pages"][0]
+    assert label["reviewed"] is True and page["image_size"] == {"width": 1000, "height": 500}
+    assert page["detections"] == [room]
