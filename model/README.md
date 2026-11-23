@@ -30,7 +30,9 @@ data/sources/            drawings: <name>.pdf or <name>.png/.jpg/.tif
 data/labels/             takeoff JSON, one file per drawing, same name: <name>.json (what training reads)
 data/drafts/             engine output kept by the backend, to correct into labels (never trained on as it is)
 data/tiles/              made by takeoff-prepare
-runs/<name>/             checkpoints (best.pt, last.pt) and log.csv
+runs/<name>/             checkpoints (best.pt, last.pt), log.csv and the training config
+runs/bench/              the current test model: ResNet-18, synthetic sheets only, for trying the pipeline
+docs/labelling/          the labelling examples below
 takeoff_model/
   synth.py               synthetic drawing sheets with exact labels
   prepare.py             render, rasterize labels, cut tiles, split by document
@@ -73,18 +75,57 @@ A label file is takeoff JSON:
 
 Polygons are in the pixels of an image of `image_size`; the page is rendered at any size and the labels follow. Labels saved from the Takeoff AI editor are in PDF points, with the page's size in points as `image_size`. Every listed page is used. A page listed with no detections teaches the model that the page holds nothing, which is useful for sections and schedules. `scale.denominator` sets the training resolution; leave it out and the printed scale is read from the PDF.
 
-**What to draw.** Be consistent: consistency matters more than anything else.
+## How to label
+
+The model learns exactly what the labels show, mistakes included. Labels must be complete, consistent and drawn on the drawn edges. The post-processing assumes these rules too: openings are gaps in walls, and rooms end at walls and openings. Labels drawn another way will fight it.
+
+A whole sheet, labelled. Every room, wall, door and window is labelled; the paved corner, furniture, text, dimensions, grid and tags are not:
+
+![A plan and its labels](docs/labelling/sheet.png)
+
+**Walls.** One rectangle per straight run, at the wall's full drawn thickness, stopping at every opening:
+
+![Walls: right and wrong](docs/labelling/walls.png)
+
+**Doors.** The gap in the wall: the door's width by the wall's thickness. Never the swing, and never a wall drawn across it:
+
+![Doors: right and wrong](docs/labelling/doors.png)
+
+**Windows.** The same: the opening in the wall, as thick as the wall. The sill and frame lines drawn outside it are not the window:
+
+![Windows: right and wrong](docs/labelling/windows.png)
+
+**Rooms.** The floor from wall face to wall face, stopping at the openings. Not over the walls:
+
+![Rooms: right and wrong](docs/labelling/rooms.png)
 
 | Class | Draw | Do not draw |
 |---|---|---|
-| `wall` | Each straight run of cut wall, as a rectangle face to face. Stop at openings. | Openings, dimension lines, hatching outside the wall, legend swatches. |
-| `door` | The opening in the wall: its width by the wall's thickness. | The swing arc or leaf. Archways with no door. |
-| `window` | The opening in the wall, as for doors. | Sills or frames drawn outside the wall. |
-| `space` | Each room's floor, wall face to wall face, stopping at its openings. | Wall thickness. Courtyards, porches and paving with no walls. Furniture and text inside are part of the room. |
-| `column` | Each column's outline. | |
-| `stair` | The stair's outline, treads included. | |
+| `wall` | Each straight run of cut wall, as a rectangle face to face. Stop at openings, and start a new run where the thickness changes. Curved walls as a polygon following the curve. | Openings, dimension lines, grid lines, hatching outside the wall, legend swatches, walls seen beyond the cut (dashed). |
+| `door` | The opening in the wall: its width by the wall's thickness. Swing, double, sliding, folding and garage doors alike. | The swing arc or leaf. Archways with no door: they're a gap only. |
+| `window` | The opening in the wall, as for doors. A glazed wall or curtain wall is a window. | Sills or frames drawn outside the wall. |
+| `space` | Each room's floor, wall face to wall face, stopping at its openings. Furniture, fittings and text inside are part of the room. | Wall thickness. Courtyards, open porches and paving with no walls. |
+| `column` | Each column's outline, over the wall it sits in. | |
+| `stair` | The flights and the landings between them, treads included. | |
 
-The post-processing assumes these rules: rooms end at walls and openings, and openings are gaps in walls. Labels drawn another way will fight it.
+**How precise.** At the training resolution one pixel is 15 mm, so:
+- **Put edges on the drawn wall faces, within about 50 mm** (3 px at the training resolution). In the editor, zoom in until the wall lines are thick, and let vertices snap to the extracted corners and the grid.
+- **A wrong class costs more than a slightly wrong edge.** A door labelled as a window, or a swing labelled as a door, teaches the model the wrong thing outright. An edge 30 mm off barely matters.
+- **Label everything on a labelled page.** Anything left out is taught as background. A missed door teaches that doors are background.
+- **Leave no gaps between pieces that touch.** Wall runs meet or overlap at corners and junctions; doors and windows meet the walls either side.
+
+**Decide the unclear cases once, and write the decisions down.** These defaults suit the post-processing:
+
+| Case | Label as |
+|---|---|
+| Balcony, veranda or porch closed off by walls or a parapet | `space` |
+| Open porch, courtyard, terrace or paving with no walls | nothing |
+| Lift shaft, duct, riser | nothing inside; their walls are walls |
+| Built-in wardrobe or cupboard inside a room | part of the room |
+| Low wall or parapet cut by the plan | `wall` |
+| Sections, elevations, schedules, cover sheets | the page, listed with no detections |
+
+**Check before training.** Draw each labels file on its drawing with `annotate-pdf-from-json` and look at it, as you would at an extraction. Mistakes show at a glance. Have a second person check a sample of everyone's pages against this section.
 
 ## Getting training data
 
@@ -173,6 +214,8 @@ Include some **non-plan pages** (sections, elevations, schedules) labelled with 
 
 ### 3. Label
 
+Follow [How to label](#how-to-label) exactly.
+
 - **Start from drafts, never from scratch.** Predict with your best model so far, or use the drafts the backend kept, then correct them in the editor or in CVAT. Correcting a draft typically takes 15 to 45 minutes a page, depending on its size. Drawing from scratch takes several times longer.
 - **Check consistency.** Before training, look over a sample of pages labelled by each person against the rules table. Inconsistent labels cost more accuracy than missing ones.
 - **Label whole pages.** Anything left unlabelled on a labelled page teaches the model that it is background.
@@ -192,9 +235,24 @@ Set `train.lr: 1.0e-4` in `config.yaml` (a third of pretraining), and `train.epo
 uv run takeoff-train --name real-v1 --resume runs/synth-v1/best.pt --fine-tune
 ```
 
-### 5. Read the training log
+### 5. Watch it learn
 
-`runs/<name>/log.csv` has one row per epoch: the loss, the validation `score` (mean IoU over space, wall, window and door) and each class's IoU. `best.pt` is kept at the best score.
+A model doesn't grow as it learns. Its size is set by its design: 53.6 million parameters (about 215 MB as `best.pt`) for the default ConvNeXt-small, and 14.3 million (57 MB) for the ResNet-18 test model. Training changes the values of those parameters, never how many there are. What it has learned shows in its scores.
+
+`runs/<name>/log.csv` has one row per epoch:
+- the loss, which should fall;
+- the validation `score` (mean IoU over space, wall, window and door, from 0 to 1), which should rise;
+- each class's IoU.
+
+`best.pt` is kept at the best score, and `last.pt` holds the latest epoch, with what's needed to resume. Read it while training runs:
+
+```bash
+column -s, -t < runs/real-v1/log.csv
+```
+
+The validation pages change as you add data, so compare scores between rounds on the fixed test set (step 6), not in `log.csv`.
+
+When the log looks wrong:
 
 | What you see | What it means | What to do |
 |---|---|---|
@@ -242,7 +300,15 @@ Changing the encoder means training from synthetic again; fine-tuning works only
 
 ### Training on a rented GPU
 
-There's no need to buy a training GPU. Rent a 24 GB card by the hour from RunPod, Lambda, Vast.ai or a cloud provider; it is usually under a dollar an hour, but check current prices.
+There's no need to buy a training GPU. Rent a 24 GB card by the hour from Google Cloud, RunPod, Lambda, Vast.ai or another provider. Prices change, so check them first.
+
+**On Google Cloud:**
+1. In Compute Engine, create a VM with a G2 machine type (one NVIDIA L4, 24 GB), such as `g2-standard-8`, a 200 GB disk, and a Deep Learning VM boot image with CUDA and NVIDIA drivers.
+2. A Spot VM costs much less but can be stopped at any time. If it is, start it again and resume with `--resume runs/<name>/last.pt` (no `--fine-tune`), which continues from the last epoch.
+3. Copy files with `gcloud compute scp` and connect with `gcloud compute ssh`, in place of `rsync` and `gpu-box` below.
+4. Stop the VM when training ends: it bills while it runs.
+
+**On any machine:**
 
 ```bash
 # on your machine: send the code and data (data/tiles can be rebuilt there instead)
@@ -259,6 +325,10 @@ rsync -av gpu-box:model/runs/real-v1/ model/runs/real-v1/
 ```
 
 Measure the first epoch's time (it's in `log.csv`) and multiply by the epoch count before leaving it running. A 60-epoch synthetic run of the default model should take a few hours on a 24 GB card. A Mac is fine for tests and small experiments, not for the real model.
+
+### Keep your data and models safe
+
+`data/` and `runs/` are not in git. Your labels are the most valuable thing here: hours of work that no model can replace. Back up `data/labels`, `data/sources` and every `best.pt` you keep, to a cloud bucket or another disk, after each labelling session and each training run.
 
 ## Using the model
 
@@ -309,6 +379,7 @@ All are in `config.yaml`.
 | Setting | When |
 |---|---|
 | `render.mm_per_px: 10` | Thin windows are missed. It renders finer and costs memory; retrain after changing it. |
+| `train.scale` | The random zoom range in training. Keep its lower end at or below `predict.locate.scale`. |
 | `predict.tta: false` | Halves prediction time, for a little accuracy. |
 | `predict.locate` | Remove it to predict whole pages, if drawings are being missed. Lower `min_plan_m2` for small plans. |
 | `vectorize.opening_evidence` | Lower it if real openings are dropped; raise it if gaps are wrongly called doors. |

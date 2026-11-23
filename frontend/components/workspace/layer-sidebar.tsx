@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { layerTotal } from '../../lib/annotations/measure';
+import { isVisibleOn, visibilityEverywhere } from '../../lib/annotations/reducer';
 import { useAnnotations } from '../../lib/annotations/store';
 import type { ShapeKind } from '../../lib/annotations/types';
 import { LayerRow } from './layer-row';
@@ -17,10 +18,17 @@ export type LayerSidebarProps = {
  * The layers drawn on the page on screen. Layers span the whole set, so
  * totals can be read for this page or for every page; a layer with nothing
  * drawn yet is listed on every page so it can be drawn into.
+ *
+ * The view sets the scope of every control: in "This page" the eye, × and
+ * "Show all" / "Hide all" act on the page on screen only; in "All pages", on
+ * every page.
+ * Hiding never changes a total; removing shapes does. Clicking a layer
+ * highlights it on the page; clicking anywhere outside the list lets go.
  */
 export function LayerSidebar({ currentPage, highlightedLayerId, onHighlight }: LayerSidebarProps) {
   const { state, dispatch } = useAnnotations();
   const [wholeSet, setWholeSet] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const rows = useMemo(
     () =>
@@ -29,7 +37,10 @@ export function LayerSidebar({ currentPage, highlightedLayerId, onHighlight }: L
         .filter(({ layer, onPage }) => onPage.length > 0 || layer.shapes.length === 0)
         .map(({ layer, onPage }) => {
           const shapes = wholeSet ? layer.shapes : onPage;
-          return { layer, count: shapes.length, total: layerTotal(layer, state.calibration, shapes) };
+          const shown = wholeSet ? visibilityEverywhere(layer) : isVisibleOn(layer, currentPage) ? 'all' : 'none';
+          // A layer with nothing on any other page is deleted outright rather than left empty.
+          const wholeLayer = wholeSet || onPage.length === layer.shapes.length;
+          return { layer, shown, wholeLayer, count: shapes.length, total: layerTotal(layer, state.calibration, shapes) };
         }),
     [currentPage, state.calibration, state.layers, wholeSet]
   );
@@ -47,6 +58,20 @@ export function LayerSidebar({ currentPage, highlightedLayerId, onHighlight }: L
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onHighlight]);
+  useEffect(() => {
+    if (!highlightedLayerId) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!listRef.current?.contains(event.target as Node)) {
+        onHighlight(null);
+      }
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [highlightedLayerId, onHighlight]);
+
+  const anyHidden = rows.some((row) => row.shown !== 'all');
 
   function addLayer(kind: ShapeKind) {
     dispatch({ type: 'addLayer', id: crypto.randomUUID(), kind });
@@ -90,9 +115,21 @@ export function LayerSidebar({ currentPage, highlightedLayerId, onHighlight }: L
             {whole ? 'All pages' : 'This page'}
           </button>
         ))}
+        {rows.length > 0 ? (
+          <button
+            type="button"
+            onClick={() =>
+              dispatch({ type: 'setAllLayersVisibility', visible: anyHidden, page: wholeSet ? undefined : currentPage })
+            }
+            title={`${anyHidden ? 'Show' : 'Hide'} every layer ${wholeSet ? 'on every page' : `on page ${currentPage}`}`}
+            className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-ink-soft transition-colors hover:text-ink"
+          >
+            {anyHidden ? '◉ Show all' : '◌ Hide all'}
+          </button>
+        ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-2">
         {rows.length === 0 ? (
           <p className="px-1 text-[11px] leading-relaxed text-ink-faint">
             Nothing on this page yet. Pick the line or area tool and start drawing — a layer is
@@ -100,7 +137,7 @@ export function LayerSidebar({ currentPage, highlightedLayerId, onHighlight }: L
           </p>
         ) : (
           <ul className="space-y-1">
-            {rows.map(({ layer, count, total }) => (
+            {rows.map(({ layer, shown, wholeLayer, count, total }) => (
               <LayerRow
                 key={layer.id}
                 layer={layer}
@@ -108,14 +145,29 @@ export function LayerSidebar({ currentPage, highlightedLayerId, onHighlight }: L
                 total={total}
                 active={layer.id === state.activeLayerId}
                 highlighted={layer.id === highlightedLayerId}
+                shown={shown}
+                deleteLabel={wholeLayer ? `Delete ${layer.name}` : `Remove ${layer.name} from page ${currentPage}`}
                 onActivate={() => {
                   dispatch({ type: 'setActiveLayer', layerId: layer.id });
                   onHighlight(layer.id === highlightedLayerId ? null : layer.id);
                 }}
                 onRename={(name) => dispatch({ type: 'renameLayer', layerId: layer.id, name })}
                 onColorChange={(color) => dispatch({ type: 'setLayerColor', layerId: layer.id, color })}
-                onToggleVisibility={() => dispatch({ type: 'toggleLayerVisibility', layerId: layer.id })}
-                onDelete={() => dispatch({ type: 'deleteLayer', layerId: layer.id })}
+                onToggleVisibility={() =>
+                  dispatch({
+                    type: 'setLayerVisibility',
+                    layerId: layer.id,
+                    visible: shown !== 'all',
+                    page: wholeSet ? undefined : currentPage
+                  })
+                }
+                onDelete={() =>
+                  dispatch(
+                    wholeLayer
+                      ? { type: 'deleteLayer', layerId: layer.id }
+                      : { type: 'deletePageShapes', layerId: layer.id, page: currentPage }
+                  )
+                }
               />
             ))}
           </ul>

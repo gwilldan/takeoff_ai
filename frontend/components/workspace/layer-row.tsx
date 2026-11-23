@@ -11,6 +11,10 @@ export type LayerRowProps = {
   active: boolean;
   /** Its shapes are highlighted on the page. */
   highlighted: boolean;
+  /** Shown where the panel is looking (this page, or every page), hidden, or shown on some pages only. */
+  shown: 'all' | 'none' | 'some';
+  /** What × does here: remove this page's shapes, or delete the layer. */
+  deleteLabel: string;
   total: string;
   onActivate: () => void;
   onRename: (name: string) => void;
@@ -24,6 +28,8 @@ export function LayerRow({
   count,
   active,
   highlighted,
+  shown,
+  deleteLabel,
   total,
   onActivate,
   onRename,
@@ -58,7 +64,6 @@ export function LayerRow({
       className={`group relative rounded-md border px-2 py-2 transition-colors ${
         active ? 'border-ink bg-chrome' : 'border-transparent hover:bg-chrome-2'
       }`}
-      style={highlighted ? { boxShadow: `inset 3px 0 0 ${layer.color}` } : undefined}
       aria-current={highlighted ? 'true' : undefined}
     >
       <div className="flex items-start gap-2">
@@ -128,21 +133,23 @@ export function LayerRow({
           </span>
           <button
             type="button"
-            aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
-            aria-pressed={!layer.visible}
+            aria-label={shown === 'all' ? `Hide ${layer.name}` : `Show ${layer.name}`}
+            title={shown === 'some' ? 'Hidden on some pages: click to show everywhere' : undefined}
+            aria-pressed={shown !== 'all'}
             onClick={(event) => {
               event.stopPropagation();
               onToggleVisibility();
             }}
             className={`grid h-5 w-5 place-items-center rounded text-[11px] transition-colors ${
-              layer.visible ? 'text-ink-soft hover:text-ink' : 'text-ink-faint'
+              shown === 'none' ? 'text-ink-faint' : 'text-ink-soft hover:text-ink'
             }`}
           >
-            <span aria-hidden>{layer.visible ? '◉' : '◌'}</span>
+            <span aria-hidden>{shown === 'all' ? '◉' : shown === 'some' ? '◐' : '◌'}</span>
           </button>
           <button
             type="button"
-            aria-label={`Delete ${layer.name}`}
+            aria-label={deleteLabel}
+            title={deleteLabel}
             onClick={(event) => {
               event.stopPropagation();
               onDelete();

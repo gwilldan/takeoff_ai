@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { HISTORY_LIMIT } from '../../lib/annotations/history';
 import { useAnnotations } from '../../lib/annotations/store';
+import { Tooltip } from '../ui/tooltip';
 
 const buttonClass =
   'grid h-7 w-7 place-items-center rounded-md border border-edge text-ink-soft transition-colors hover:border-edge-strong hover:text-ink disabled:opacity-40';
@@ -27,14 +28,18 @@ export function HistoryMenu() {
 
   return (
     <div className="relative flex items-center gap-1">
-      <button type="button" title={undoLabel} aria-label={undoLabel} disabled={versions.length === 0}
-        onClick={() => dispatch({ type: 'undo' })} className={buttonClass}>
-        <span aria-hidden>↶</span>
-      </button>
-      <button type="button" title={redoLabel} aria-label={redoLabel} disabled={redoCount === 0}
-        onClick={() => dispatch({ type: 'redo' })} className={buttonClass}>
-        <span aria-hidden>↷</span>
-      </button>
+      <Tooltip label={undoLabel}>
+        <button type="button" aria-label={undoLabel} disabled={versions.length === 0}
+          onClick={() => dispatch({ type: 'undo' })} className={buttonClass}>
+          <span aria-hidden>↶</span>
+        </button>
+      </Tooltip>
+      <Tooltip label={redoLabel}>
+        <button type="button" aria-label={redoLabel} disabled={redoCount === 0}
+          onClick={() => dispatch({ type: 'redo' })} className={buttonClass}>
+          <span aria-hidden>↷</span>
+        </button>
+      </Tooltip>
       <button
         type="button"
         aria-expanded={open}

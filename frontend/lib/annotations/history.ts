@@ -30,6 +30,7 @@ const EDIT_LABELS: Partial<Record<AnnotationAction['type'], string>> = {
   renameLayer: 'Renamed a layer',
   setLayerColor: 'Changed a layer colour',
   deleteLayer: 'Deleted a layer',
+  deletePageShapes: 'Removed a layer from a page',
   addShape: 'Drew a shape',
   deleteShape: 'Deleted a shape',
   updateShapePoints: 'Edited a shape',

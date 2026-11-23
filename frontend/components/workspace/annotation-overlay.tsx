@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type PointerEvent } from 'react';
 import { hitTestShape, polygonArea, polylineLength } from '../../lib/annotations/geometry';
 import { formatArea, formatLength } from '../../lib/annotations/measure';
+import { isVisibleOn } from '../../lib/annotations/reducer';
 import { edgeAt, snapPoint, vertexAt } from '../../lib/annotations/snapping';
 import { useAnnotations } from '../../lib/annotations/store';
 import {
@@ -39,7 +40,7 @@ export type AnnotationOverlayProps = {
   scale: number;
   tool: ToolId;
   onCalibrationLine: (lengthPts: number) => void;
-  /** Shapes of this layer stand out; every other layer is dimmed. */
+  /** Shapes of this layer stand out; the others are drawn as they are. */
   highlightedLayerId: string | null;
 };
 
@@ -84,7 +85,7 @@ export function AnnotationOverlay({
     const entries: Array<{ shape: Shape; layer: Layer }> = [];
 
     for (const layer of state.layers) {
-      if (!layer.visible) {
+      if (!isVisibleOn(layer, pageNumber)) {
         continue;
       }
 
@@ -400,12 +401,12 @@ export function AnnotationOverlay({
         const ys = shape.points.map((p) => p.y);
 
         return (
-          <g key={shape.id} opacity={highlightedLayerId && !highlighted ? 0.2 : 1}>
+          <g key={shape.id}>
             {shape.kind === 'area' ? (
               <polygon
                 points={pointsAttribute}
                 fill={color}
-                fillOpacity={layer.fillOpacity ?? 0.22}
+                fillOpacity={Math.min(0.75, (layer.fillOpacity ?? 0.22) + (highlighted ? 0.2 : 0))}
                 stroke={color}
                 strokeWidth={annotated ? 0.8 : selected || highlighted ? 3 : 1.75}
                 strokeDasharray={shape.needsReview ? (annotated ? '3 2' : '6 4') : undefined}

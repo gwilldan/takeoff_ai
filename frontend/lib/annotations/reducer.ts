@@ -6,8 +6,13 @@ export type AnnotationAction =
   | { type: 'addLayer'; id: string; kind: ShapeKind }
   | { type: 'renameLayer'; layerId: string; name: string }
   | { type: 'setLayerColor'; layerId: string; color: string }
-  | { type: 'toggleLayerVisibility'; layerId: string }
+  /** On one page when `page` is given, else on every page. */
+  | { type: 'setLayerVisibility'; layerId: string; visible: boolean; page?: number }
+  /** Every layer shown or hidden: on one page when `page` is given, else on every page. */
+  | { type: 'setAllLayersVisibility'; visible: boolean; page?: number }
   | { type: 'deleteLayer'; layerId: string }
+  /** A layer's shapes on one page; the layer and its other pages stay. */
+  | { type: 'deletePageShapes'; layerId: string; page: number }
   | { type: 'setActiveLayer'; layerId: string }
   | { type: 'addShape'; shape: Shape; fallbackLayerId: string }
   | { type: 'deleteShape'; shapeId: string }
@@ -39,6 +44,33 @@ function createLayer(id: string, kind: ShapeKind, existingCount: number): Layer 
     visible: true,
     shapes: []
   };
+}
+
+/** Whether a layer is shown on a page. */
+export function isVisibleOn(layer: Layer, page: number): boolean {
+  return layer.pageVisibility?.[page] ?? layer.visible;
+}
+
+/** Whether a layer is shown on every page, on none, or on some. */
+export function visibilityEverywhere(layer: Layer): 'all' | 'none' | 'some' {
+  const exceptions = Object.values(layer.pageVisibility ?? {}).filter((shown) => shown !== layer.visible);
+  if (exceptions.length === 0) {
+    return layer.visible ? 'all' : 'none';
+  }
+  return 'some';
+}
+
+function withVisibility(layer: Layer, visible: boolean, page?: number): Layer {
+  if (page === undefined) {
+    return { ...layer, visible, pageVisibility: undefined };
+  }
+  const pageVisibility = { ...layer.pageVisibility };
+  if (visible === layer.visible) {
+    delete pageVisibility[page]; // back in line with every other page
+  } else {
+    pageVisibility[page] = visible;
+  }
+  return { ...layer, pageVisibility: Object.keys(pageVisibility).length ? pageVisibility : undefined };
 }
 
 function mapLayer(
@@ -73,8 +105,24 @@ export function annotationReducer(
     case 'setLayerColor':
       return mapLayer(state, action.layerId, (layer) => ({ ...layer, color: action.color }));
 
-    case 'toggleLayerVisibility':
-      return mapLayer(state, action.layerId, (layer) => ({ ...layer, visible: !layer.visible }));
+    case 'setLayerVisibility':
+      return mapLayer(state, action.layerId, (layer) => withVisibility(layer, action.visible, action.page));
+
+    case 'setAllLayersVisibility':
+      return { ...state, layers: state.layers.map((layer) => withVisibility(layer, action.visible, action.page)) };
+
+    case 'deletePageShapes': {
+      const layer = state.layers.find((candidate) => candidate.id === action.layerId);
+      const removed = new Set(layer?.shapes.filter((shape) => shape.pageNumber === action.page).map((shape) => shape.id));
+
+      return {
+        ...mapLayer(state, action.layerId, (current) => ({
+          ...current,
+          shapes: current.shapes.filter((shape) => shape.pageNumber !== action.page)
+        })),
+        selectedShapeId: state.selectedShapeId && removed.has(state.selectedShapeId) ? null : state.selectedShapeId
+      };
+    }
 
     case 'deleteLayer': {
       const removed = state.layers.find((layer) => layer.id === action.layerId);

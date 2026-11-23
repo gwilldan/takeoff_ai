@@ -50,7 +50,13 @@ export type Layer = {
   name: string;
   color: string;
   kind: ShapeKind;
+  /** Shown on every page, unless `pageVisibility` says otherwise for a page. */
   visible: boolean;
+  /**
+   * Per-page exceptions to `visible`, by page number: hiding a layer on one
+   * page leaves it as it was on every other. Visibility never changes totals.
+   */
+  pageVisibility?: Record<number, boolean>;
   shapes: Shape[];
   source?: LayerSource;
   measure?: LayerMeasure;
