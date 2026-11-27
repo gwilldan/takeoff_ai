@@ -31,7 +31,7 @@ export function Hero() {
         </h1>
 
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-ink-soft">
-          TakeoffAI reads vector-based AEC drawings, then hands you editable line and area layers with a precise Bill of Quantities. Every quantity traces back to the sheet, so review takes minutes instead of an afternoon with a scale rule.
+          TakeoffAI reads AEC drawings, whether vector PDFs or scanned raster sheets, then hands you editable line and area layers with a precise Bill of Quantities. Every quantity traces back to the sheet, so review takes minutes instead of an afternoon with a scale rule.
         </p>
 
         <div className="mt-9 flex flex-wrap items-center gap-3">

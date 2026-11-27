@@ -8,7 +8,7 @@ const STEPS: Step[] = [
   {
     index: '01',
     title: 'Upload Drawing set',
-    body: 'Drop in a vector plan PDF. Pages render locally in the browser, then are stored securely on our server'
+    body: 'Drop in a plan PDF, vector or scanned. Pages render locally in the browser, then are stored securely on our server'
   },
   {
     index: '02',

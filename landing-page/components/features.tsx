@@ -19,8 +19,8 @@ const FEATURES: Feature[] = [
     body: 'Polylines total their length; closed regions total their area with the shoelace formula. Both read in mm, m, or m².'
   },
   {
-    title: 'Vector-accurate geometry',
-    body: 'Measurements come from the PDF’s own line segments and coordinates, not from pixels guessed off a raster image.'
+    title: 'Vector and scanned PDFs',
+    body: 'CAD exports and scanned raster sheets both work. Every measurement is taken off the drawing at its calibrated scale, whichever kind of PDF it came from.'
   },
   {
     title: 'Sheet-set navigation',
